@@ -1,0 +1,55 @@
+# MoveIt uses this configuration for controller management
+
+moveit_controller_manager: moveit_simple_controller_manager/MoveItSimpleControllerManager
+
+moveit_simple_controller_manager:
+  controller_names:
+    - fairino5_controller
+    - test_rail_controller
+    - gripper_controller
+    - gripper_controller2
+
+  fairino5_controller:
+    type: FollowJointTrajectory
+    action_ns: follow_joint_trajectory
+    default: true
+    joints:
+      - j1
+      - j2
+      - j3
+      - j4
+      - j5
+      - j6
+    action_ns: follow_joint_trajectory
+    default: true
+  
+  gripper_controller2:
+    type: FollowJointTrajectory
+    action_ns: follow_joint_trajectory 
+    default: true
+    joints:
+     - gripper_joint_X
+     - gripper_joint_X2
+    action_ns: follow_joint_trajectory
+    default: true
+
+
+  gripper_controller:
+    type: FollowJointTrajectory
+    action_ns: follow_joint_trajectory 
+    default: true
+    joints:
+     - gripper_joint_X
+    action_ns: follow_joint_trajectory
+    default: true
+
+
+
+  test_rail_controller:
+    type: FollowJointTrajectory
+    action_ns: follow_joint_trajectory
+    default: true
+    joints:
+      - test_rail_joint
+    action_ns: follow_joint_trajectory
+    default: true

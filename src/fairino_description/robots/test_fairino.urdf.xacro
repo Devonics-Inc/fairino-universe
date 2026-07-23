@@ -1,0 +1,230 @@
+<?xml version="1.0"?>
+
+<!-- this is a generic xacro file for a generic fairino_robot that uses arguments to generate the exact configuration -->
+
+<robot xmlns:xacro="http://ros.org/wiki/xacro" name="$(arg robot_model)_v6_robot">    
+
+    <!-- The parsing of the arguments is done in the test_sim_master_launch.py -->
+
+    <!-- 
+        Xacro arguments are passed from the python launch file.
+        If no argument is provided, the default value will be used.
+    -->
+
+<!-- ****************** 1- Define the arguments For the XACRO ***************** -->
+
+<!-- argument summary
+
+    robot_model:
+        Defines which Fairino cobot model should be loaded.
+
+    robot_mount:
+        Defines where the robot is mounted (world, rail, etc.).
+
+    control_system:
+        Defines which control interface should be generated.
+-->
+
+
+    <!-- robot_model argument and default set to fairino5 -->
+    <xacro:arg name="robot_model" default="fairino5" />
+
+    <!-- robot mount argument and default set to world -->
+    <xacro:arg name="robot_mount" default="world" />
+
+    <!-- control system argument and default set to moveit -->
+    <xacro:arg name="control_system" default="moveit" />
+
+    <!-- gripper argument, defualt is set to none -->
+    <xacro:arg name="gripper" default="dh_ag95" />
+
+    <xacro:arg name="gripper_joint_name" default="gripper_finger_joint" />
+
+    <xacro:arg name="rail_length" default="2.0"/>
+    <xacro:arg name="rail_width" default="0.2"/>
+
+    <xacro:arg name="gripper_hardware_connected" default="false" />
+    <xacro:arg name="listen_only_mode" default="true" />
+    <xacro:arg name="robot_ip_address" default="192.168.58.2" />
+    <xacro:arg name="gripper_hardware_plugin" default="none"/>
+
+
+    
+    <xacro:property name="gripper_hardware_plugin_val" value="$(arg gripper_hardware_plugin)"/>
+    <xacro:property name="robot_ip_address_val" value="$(arg robot_ip_address)"/>
+    <xacro:property name="gripper_hardware_connected_val" value="$(arg gripper_hardware_connected)"/>
+
+
+
+
+
+
+
+<!-- ****************** 2- Define XACRO properties using arguments ********************* -->
+
+<!-- property summary
+
+    robot_model:
+        Stores the selected robot model.
+
+    robot_mount_name:
+        Stores the selected robot mounting frame.
+
+    robot_config_package:
+        Defines the MoveIt configuration package associated with the robot.
+
+    initial_positions_file:
+        Defines the yaml file containing the initial joint positions.
+-->
+
+
+    <!-- map the xacro argument robot_model to a xacro property -->
+    <xacro:property name="robot_model" value="$(arg robot_model)" />
+
+    <!-- map the xacro argument robot_mount to a xacro property -->
+    <xacro:property name="robot_mount_name" value="$(arg robot_mount)" />
+
+
+    <!-- 
+        Generate the robot configuration package name dynamically uisng the name proprety.
+        Example:
+        fairino5 -> fairino5_v6_moveit2_config
+    -->
+    <xacro:property name="robot_config_package" value="${robot_model}_v6_moveit2_config" />
+
+
+    <!-- introduced initial_position_data proprety using the robot_config_package prop -->
+    <xacro:property name="initial_positions_file" value="$(find ${robot_config_package})/config/initial_positions.yaml"/>
+
+    <!-- intorduced gripper_name proprety will be used to fetch the gripper description later -->
+    <xacro:property name="gripper_name" value="$(arg gripper)" />
+
+    <xacro:property name="gripper_joint_name" value="$(arg gripper_joint_name)" />
+    <xacro:property name="listen_only_mode_val" value="$(arg listen_only_mode)"/>
+
+
+
+
+
+<!-- ****************** 3- Include the robot template ********************* -->
+<!-- 
+    Include external xacro files required to build the robot.
+    These files contain:
+    - robot links
+    - joints
+    - meshes
+    - ros2_control definitions
+-->
+    <!-- robot links xacro -->
+    <xacro:include filename="$(find ${robot_config_package})/config/${robot_model}_robot.xacro"/>
+
+    <!-- robot links + ros2 control  -->
+    <xacro:include filename="$(find ${robot_config_package})/config/${robot_model}_v6_robot.ros2_control.xacro" />
+
+    
+    <link name="world"/>
+
+
+
+<!-- ****************** 4- Define robot mounting logic ********************* -->
+
+<!-- 
+    Check if the robot is mounted somewhere other than world.
+
+    Example:
+    world
+      |
+      rail
+      |
+      robot base_link
+
+    In this case, include the rail description.
+-->
+    <xacro:if value="${'$(arg robot_mount)' != 'world'}">
+        <!-- include the external mount description -->
+        <xacro:include filename="$(find rail_description)/config/$(arg robot_mount).urdf.xacro"/>
+                
+        <!-- only call test_rail, with rail-specific args, if the mount type is actually 'rail' -->
+        <xacro:if value="${'$(arg robot_mount)' == 'test_rail'}">
+            <xacro:test_rail parent="world" length="$(arg rail_length)" width="$(arg rail_width)"/>
+        </xacro:if>
+
+        <!-- any other mount type calls its own macro, named to match, without rail args -->
+        <xacro:unless value="${'$(arg robot_mount)' == 'test_rail'}">
+            <xacro:call macro="${robot_mount_name}" parent="world"/>
+        </xacro:unless>
+
+        <!-- connect robot base_link to the rail -->
+        <joint name="robot_to_rail" type="fixed">
+            <parent link="$(arg robot_mount)_carriage"/>
+            <child link="base_link"/>
+            <origin xyz="0 0 0.05" rpy="0 0 0"/>
+        </joint>
+    </xacro:if>
+
+
+
+<!-- 
+    Default case:
+    Robot is directly mounted to world.
+
+    world
+      |
+    base_link
+-->
+    <xacro:if value="${'$(arg robot_mount)' == 'world'}">
+        <joint name="mount_to_world" type="fixed">
+            <parent link="world"/>
+            <child link="base_link"/>
+        </joint>
+    </xacro:if>
+
+
+
+<!-- ****************** 5- Load robot model and ros2_control configuration ********************* -->
+
+
+<!-- 
+    Based on the selected robot_model:
+
+    1- Load the robot geometry:
+        fairinoX()
+
+    2- Load the ros2_control configuration:
+        fairinoX_v6_robot_ros2_control()
+
+    Currently using FakeSystem for simulation.
+-->
+
+
+    <xacro:call macro="${robot_model}"/>
+    
+
+    <!-- if the gripper argument is not none, attach the gripper to the cobot body and  -->
+    
+    <xacro:if value="${gripper_name != 'none'}">
+    
+        <xacro:include filename="$(find gripper_descriptions)/urdf/${gripper_name}/${gripper_name}_macro.xacro" />
+        <xacro:call macro="${gripper_name}_gripper" parent="wrist3_link" actuated_joint_name="gripper_joint_X" prefix="${gripper_name}_">
+            <origin xyz="0 0 0.1" rpy="0 0 0" />
+        </xacro:call>
+    </xacro:if>
+
+
+    <!-- APPEND THE CONTROL XACRO For the cobot body -->
+    <xacro:include filename="$(find ${robot_model}_v6_moveit2_config)/config/${robot_model}_v6_robot.ros2_control.xacro" />
+    <xacro:call macro="${robot_model}_v6_robot_ros2_control" 
+            name="FakeSystem"
+            initial_positions_file="${initial_positions_file}"
+            ros2_control_header="$(arg robot_mount)" 
+            control_system="$(arg control_system)"
+            gripper_hardware_connected="${gripper_hardware_connected_val}"
+            gripper_hardware_plugin="${gripper_hardware_plugin_val}"
+            listen_only_mode="${listen_only_mode_val}"
+            robot_ip_address="${robot_ip_address_val}"
+            gripper_name="${gripper_name}" />
+
+
+
+
+</robot>

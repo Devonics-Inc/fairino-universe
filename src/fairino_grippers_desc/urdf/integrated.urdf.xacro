@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="fairino_with_ag95">
+
+  <!-- Fairino robot description urdf, you might need to modify the file name if you use a different robot model -->
+  <xacro:include filename="$(find fairino_gripper_integrated_desc)/urdf/fairino5_v6.urdf" />
+
+  <!-- Gripper macro you might need to modify the file name if you have a different gripper -->
+  <xacro:include filename="$(find fairino_gripper_integrated_desc)/urdf/dh_ag95_macro.xacro" />
+
+  <!-- Attach gripper to wrist link, you might need to change the offset of the gripper if needed  -->
+  <xacro:dh_ag95_gripper parent="wrist3_link" prefix="gripper_">
+    <origin xyz="0 0 0.1" rpy="0 0 0" />
+  </xacro:dh_ag95_gripper>
+
+</robot>

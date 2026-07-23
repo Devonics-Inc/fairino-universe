@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <ros2_control name="MillDoorControl" type="system">
+    <joint name="mill_to_door_joint">
+      <command_interface name="position">
+        <param name="min">-0</param>
+        <param name="max">0.5</param>
+      </command_interface>
+      <state_interface name="position"/>
+    </joint>
+  </ros2_control>
+</robot>

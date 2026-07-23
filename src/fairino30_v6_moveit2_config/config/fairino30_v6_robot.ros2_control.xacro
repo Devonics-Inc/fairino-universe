@@ -1,0 +1,134 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+    <xacro:macro name="fairino30_v6_robot_ros2_control" params="name initial_positions_file ros2_control_header:=world control_system:=moveit gripper_name:=none gripper_hardware_connected:=false gripper_hardware_plugin:=mock_components/GenericSystem listen_only_mode:=true robot_ip_address:=192.168.58.2">
+        <xacro:property name="initial_positions" value="${xacro.load_yaml(initial_positions_file)['initial_positions']}"/>
+      
+        <!-- Xacro arg for control system (Defualted to Rviz/Moveit-->
+        <xacro:property name="controllers_yaml_name" value="${'ros2_controllers.yaml' if ros2_control_header == 'world' else 'fairino30_' + ros2_control_header + '_ros2_controllers.yaml'}"/>     
+        <ros2_control name="${name}" type="system">
+            <hardware>
+              <xacro:if value="${control_system == 'moveit'}">
+                  <plugin>mock_components/GenericSystem</plugin>
+              </xacro:if>
+              <xacro:if value="${control_system == 'hardware'}">
+                  <plugin>fairino_hardware/FairinoHardwareInterface</plugin>
+              </xacro:if>
+              <xacro:if value="${control_system == 'gazebo'}">
+                  <plugin>gz_ros2_control/GazeboSimSystem</plugin>
+              </xacro:if>
+          </hardware>
+          <joint name="j1">
+              <xacro:unless value="${listen_only_mode}">
+                    <command_interface name="position"/>
+              </xacro:unless>
+              <state_interface name="position">
+                <param name="initial_value">${initial_positions['j1']}</param>
+              </state_interface>
+          </joint>
+          <joint name="j2">
+              <xacro:unless value="${listen_only_mode}">
+                    <command_interface name="position"/>
+              </xacro:unless>
+              <state_interface name="position">
+                <param name="initial_value">${initial_positions['j2']}</param>
+              </state_interface>
+          </joint>
+          <joint name="j3">
+              <xacro:unless value="${listen_only_mode}">
+                    <command_interface name="position"/>
+              </xacro:unless>
+              <state_interface name="position">
+                <param name="initial_value">${initial_positions['j3']}</param>
+              </state_interface>
+          </joint>
+          <joint name="j4">
+              <xacro:unless value="${listen_only_mode}">
+                    <command_interface name="position"/>
+              </xacro:unless>
+              <state_interface name="position">
+                <param name="initial_value">${initial_positions['j4']}</param>
+              </state_interface>
+          </joint>
+          <joint name="j5">
+              <xacro:unless value="${listen_only_mode}">
+                    <command_interface name="position"/>
+              </xacro:unless>
+              <state_interface name="position">
+                <param name="initial_value">${initial_positions['j5']}</param>
+              </state_interface>
+          </joint>
+          <joint name="j6">
+              <xacro:unless value="${listen_only_mode}">
+                    <command_interface name="position"/>
+              </xacro:unless>
+              <state_interface name="position">
+                <param name="initial_value">${initial_positions['j6']}</param>
+              </state_interface>
+          </joint>
+        </ros2_control> 
+        <xacro:if value="${ros2_control_header != 'world'}">
+            <ros2_control name="${name}_rail" type="system">
+                <hardware>
+                    <plugin>mock_components/GenericSystem</plugin>
+                </hardware>
+                <joint name="${ros2_control_header}_joint">
+                    <command_interface name="position"/>
+                    <state_interface name="position">
+                        <param name="initial_value">0.0</param>
+                    </state_interface>
+                </joint>
+            </ros2_control>
+        </xacro:if>
+
+
+ <!-- conditionally add the gripper control part assuming you choose the gripper dh_ag95 -->
+        <xacro:if value="${gripper_name != 'none'}">
+            <ros2_control name="${name}_gripper" type="system">
+                <hardware>
+                    <xacro:if value="${str(gripper_hardware_connected).lower() == 'true'}">
+                        <plugin>${gripper_hardware_plugin}</plugin>
+                    </xacro:if>
+                    <xacro:if value="${str(gripper_hardware_connected).lower() == 'false'}">
+                        <plugin>mock_components/GenericSystem</plugin>
+                    </xacro:if>
+                </hardware>
+                <xacro:if value="${gripper_name == 'dh_ag3'}">
+                    <joint name="gripper_joint_X">
+                        <command_interface name="position">
+                            <param name="min">0.0</param>
+                        </command_interface>
+                        <state_interface name="position">
+                            <param name="initial_value">0.0</param>
+                        </state_interface>
+                    </joint>
+                    <joint name="gripper_joint_X2">
+                        <command_interface name="position">
+                            <param name="min">0.0</param>
+                        </command_interface>
+                        <state_interface name="position">
+                            <param name="initial_value">0.0</param>
+                        </state_interface>
+                    </joint>
+                </xacro:if>
+                <xacro:unless value="${gripper_name == 'dh_ag3'}">
+                    <joint name="gripper_joint_X">
+                        <command_interface name="position">
+                            <param name="min">0.0</param>
+                        </command_interface>
+                        <state_interface name="position">
+                            <param name="initial_value">0.0</param>
+                        </state_interface>
+                    </joint>
+                </xacro:unless>
+            </ros2_control> 
+        </xacro:if>
+        <xacro:if value="${control_system == 'gazebo'}">
+            <gazebo>
+              <plugin filename="libign_ros2_control-system.so"
+              name="gz_ros2_control::GazeboSimROS2ControlPlugin">
+                  <parameters>$(find fairino30_v6_moveit2_config)/config/ros2_controllers.yaml</parameters>
+              </plugin>
+          </gazebo>
+        </xacro:if>
+    </xacro:macro>
+</robot>
