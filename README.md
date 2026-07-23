@@ -6,7 +6,7 @@ Built on top of ROS 2, MoveIt 2, and Gazebo, the framework provides a ready-to-u
 
 It works by providing the user with a set of YAML configuration files. These files are parsed and used to automatically configure the simulation environment, enabling support for a wide range of automation applications.
 
-![Demo](docs/videos/FR5EX.webp)
+![Demo](src/docs/videos/FR5EX.webp)
 
 ## Features
 
