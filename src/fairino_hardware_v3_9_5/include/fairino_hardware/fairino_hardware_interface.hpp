@@ -60,7 +60,6 @@ private:
   double _jnt_velocity_state[6];
   double _jnt_torque_state[6];
   int _control_mode;
-  bool _read_only = false;
   std::string _controller_ip = CONTROLLER_IP_ADDRESS;
   std::unique_ptr<FRRobot> _ptr_robot;
 };

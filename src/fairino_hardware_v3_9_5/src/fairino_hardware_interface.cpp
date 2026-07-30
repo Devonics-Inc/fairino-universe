@@ -7,39 +7,22 @@ hardware_interface::CallbackReturn FairinoHardwareInterface::on_init(const hardw
         return hardware_interface::CallbackReturn::ERROR;
     }
     info_ = sysinfo;//info_是父类中定义的变量
-    // Fetch the IP address from the URDF parameters
-    auto it = info_.hardware_parameters.find("robot_ip");
-    if (it != info_.hardware_parameters.end()) {
-        _controller_ip = it->second;
-        RCLCPP_INFO(rclcpp::get_logger("FairinoHardwareInterface"), 
-                    "Found controller IP in URDF: %s", _controller_ip.c_str());
-    } else {
-        // Fallback or Error if the IP is mandatory
-        RCLCPP_WARN(rclcpp::get_logger("FairinoHardwareInterface"), 
-                    "No 'robot_ip' parameter found in URDF. Falling back to default: 192.168.58.2");
-        _controller_ip = "192.168.58.2"; // Set your default IP here
-    } // <-- FIXED: Added missing closing brace for else block
     
     for (const hardware_interface::ComponentInfo& joint : info_.joints) {
 
-        // NEW:
-        if (joint.command_interfaces.size() > 1) {
+        //指令部分
+        if (joint.command_interfaces.size() != 1) {//开放servoJ
             RCLCPP_FATAL(rclcpp::get_logger("FairinoHardwareInterface"),
-                        "Joint '%s' has %zu command interfaces found. 0 or 1 expected.", joint.name.c_str(),
+                        "Joint '%s' has %zu command interfaces found. 1 expected.", joint.name.c_str(),
                         joint.command_interfaces.size());
             return hardware_interface::CallbackReturn::ERROR;
         }
 
-        if (joint.command_interfaces.size() == 1 &&
-            joint.command_interfaces[0].name != hardware_interface::HW_IF_POSITION) {
+        if (joint.command_interfaces[0].name != hardware_interface::HW_IF_POSITION) {
             RCLCPP_FATAL(rclcpp::get_logger("FairinoHardwareInterface"),
-                "Joint '%s' have %s command interfaces found as first command interface. '%s' expected.",
-                joint.name.c_str(), joint.command_interfaces[0].name.c_str(), hardware_interface::HW_IF_POSITION);
+                   "Joint '%s' have %s command interfaces found as first command interface. '%s' expected.",
+                   joint.name.c_str(), joint.command_interfaces[0].name.c_str(), hardware_interface::HW_IF_POSITION);
             return hardware_interface::CallbackReturn::ERROR;
-        }
-
-        if (joint.command_interfaces.empty()) {
-            _read_only = true;
         }
 
         // if (joint.command_interfaces[1].name != hardware_interface::HW_IF_EFFORT){//预留，用于关节扭矩直接控制
@@ -133,7 +116,6 @@ hardware_interface::CallbackReturn FairinoHardwareInterface::on_activate(const r
         _jnt_velocity_state[i] = 0;
         _jnt_torque_state[i] = 0;
     }
-    
     _control_mode = 0;//默认是位置控制,0-位置控制，1-扭矩控制 2-速度控制
     errno_t returncode = _ptr_robot->RPC(_controller_ip.c_str());//建立xmlrpc连接
     rclcpp::sleep_for(200ms);//等待一段时间让控制器的rpc连接建立完毕
@@ -199,9 +181,6 @@ hardware_interface::return_type FairinoHardwareInterface::read(const rclcpp::Tim
 
 hardware_interface::return_type FairinoHardwareInterface::write(const rclcpp::Time& time,const rclcpp::Duration& period)
 {
-    if (_read_only) {
-        return hardware_interface::return_type::OK;
-    }
     if(_control_mode == 0){//位置控制模式
         if (std::any_of(&_jnt_position_command[0], &_jnt_position_command[5],\
             [](double c) { return not std::isfinite(c); })) {

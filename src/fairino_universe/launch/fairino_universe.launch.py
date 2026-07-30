@@ -12,7 +12,7 @@ physical Fairino arm in RViz/Gazebo while driving it normally.
 """
 
 import os
-
+import re
 import xacro
 import yaml
 from ament_index_python.packages import get_package_share_directory
@@ -29,6 +29,25 @@ from launch.actions import (
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+import subprocess
+
+# Workspace root -- must be defined before anything below that references it.
+WORKSPACE_ROOT = os.getcwd()
+
+FAIRINO_HARDWARE_PKG_VERSION = "fairino_hardware_v3_9_5"
+
+FAIRINO_HARDWARE_IP_HEADER = os.path.join(
+    WORKSPACE_ROOT, "src", FAIRINO_HARDWARE_PKG_VERSION,
+    "include", "fairino_hardware", "data_type_def.h"
+)
+FAIRINO_HARDWARE_INTERFACE_HEADER = os.path.join(
+    WORKSPACE_ROOT, "src", FAIRINO_HARDWARE_PKG_VERSION,
+    "include", "fairino_hardware", "fairino_hardware_interface.hpp"
+)
+
+REBUILD_PACKAGES = ["fairino_hardware_v3_9_5"]
+
+
 
 # Maps a robot_model argument to its corresponding MoveIt 2 config package.
 # Centralised here so every part of the launch file agrees on the package name
@@ -55,6 +74,92 @@ GRIPPER_JOINT_MAP = {
 GRIPPER_CONTROLLER_NAME_MAP = {"dh_ag3": "gripper_controller2"}
 
 
+def patch_define_macro(header_path, macro_name, value):
+    """
+    Overwrites a #define <macro_name> "..." line in a header file with the
+    given value. Generic across any header/macro pair -- used for both
+    data_type_def.h's CONTROLLER_IP and fairino_hardware_interface.hpp's
+    CONTROLLER_IP_ADDRESS, driven by the same robot_ip_address argument.
+
+    Matches the line:
+        #define <macro_name> "<anything>"
+    and replaces only the quoted string -- macro name, spacing, and any
+    trailing comment on the line are left untouched.
+
+    Raises RuntimeError if the file doesn't exist or the macro isn't found,
+    so a typo'd macro name or moved header fails loudly instead of silently
+    building against a stale value.
+    """
+    if not os.path.isfile(header_path):
+        raise RuntimeError(f"[MACRO PATCH] Header not found: {header_path}")
+
+    with open(header_path, "r") as f:
+        content = f.read()
+
+    pattern = rf'(#define\s+{re.escape(macro_name)}\s+")[^"]*(")'
+    new_content, count = re.subn(pattern, rf'\g<1>{value}\g<2>', content)
+
+    if count == 0:
+        raise RuntimeError(
+            f"[MACRO PATCH] {macro_name} #define not found in {header_path}. "
+            "File format may have changed."
+        )
+
+    with open(header_path, "w") as f:
+        f.write(new_content)
+
+    print(f"[MACRO PATCH] {header_path}: {macro_name} set to \"{value}\"")
+
+
+def update_controller_ip(header_path, ip_address):
+    """
+    Overwrites the CONTROLLER_IP #define in fairino_hardware's
+    data_type_def.h with the given IP, before the package is rebuilt.
+    Matches the line:
+        #define CONTROLLER_IP "192.168.58.2"
+    regardless of the current IP value, and replaces only the quoted
+    string -- the rest of the line (macro name, spacing, comments) is
+    left untouched.
+    Raises RuntimeError if the file doesn't exist or the macro isn't
+    found, so a typo'd IP or moved header fails loudly instead of
+    silently building against a stale address.
+    """
+    if not os.path.isfile(header_path):
+        raise RuntimeError(f"[IP PATCH] Header not found: {header_path}")
+    with open(header_path, "r") as f:
+        content = f.read()
+    pattern = r'(#define\s+CONTROLLER_IP\s+")[^"]*(")'
+    new_content, count = re.subn(pattern, rf'\g<1>{ip_address}\g<2>', content)
+    if count == 0:
+        raise RuntimeError(
+            f"[IP PATCH] CONTROLLER_IP #define not found in {header_path}. "
+            "File format may have changed."
+        )
+    with open(header_path, "w") as f:
+        f.write(new_content)
+    print(f"[IP PATCH] {header_path}: CONTROLLER_IP set to \"{ip_address}\"")
+
+
+def rebuild_packages(workspace_dir, packages, symlink_install=True):
+    cmd = ["colcon", "build", "--packages-select", *packages]
+    if symlink_install:
+        cmd.append("--symlink-install")
+    print(f"[BUILD] Running: {' '.join(cmd)}  (cwd={workspace_dir})")
+    result = subprocess.run(cmd, cwd=workspace_dir, capture_output=True, text=True)
+    print(result.stdout)
+    print(result.stderr)
+
+    if result.returncode != 0:
+        raise RuntimeError(f"[BUILD] colcon build failed for {packages}")
+
+    if "ignoring unknown package" in result.stdout or "ignoring unknown package" in result.stderr:
+        raise RuntimeError(
+            f"[BUILD] colcon did not recognize package(s) {packages} in "
+            f"--packages-select. Check the <name> tag in that package's "
+            f"package.xml -- it may not match the folder name."
+        )
+
+    print(f"[BUILD] Rebuilt successfully: {', '.join(packages)}")
 
 def _flatten(d, parent_key="", sep="_"):
     """Flattens nested dicts so existing flat defaults.get('key') calls keep working."""
@@ -130,6 +235,12 @@ def _truthy(value: str) -> bool:
 
 def launch_setup(context, *args, **kwargs):
 
+    robot_ip_address = LaunchConfiguration("robot_ip_address").perform(context)
+
+    patch_define_macro(FAIRINO_HARDWARE_IP_HEADER, "CONTROLLER_IP", robot_ip_address)
+    patch_define_macro(FAIRINO_HARDWARE_INTERFACE_HEADER, "CONTROLLER_IP_ADDRESS", robot_ip_address)
+
+    rebuild_packages(WORKSPACE_ROOT, REBUILD_PACKAGES)
     # -------------------------------------------------------------------------
     # 1. Extract launch arguments  | Configuration from CLI 
     # -------------------------------------------------------------------------
@@ -195,7 +306,6 @@ def launch_setup(context, *args, **kwargs):
     gripper_controller_filename = LaunchConfiguration("gripper_controller").perform(context)
     gripper_hardware_plugin = LaunchConfiguration("gripper_hardware_plugin").perform(context)
     listen_only_mode = LaunchConfiguration("listen_only_mode").perform(context)
-    robot_ip_address = LaunchConfiguration("robot_ip_address").perform(context)
 
 
 
