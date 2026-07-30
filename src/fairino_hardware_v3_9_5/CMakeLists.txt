@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.8)
-project(fairino_hardware_v3_9_5a)
+project(fairino_hardware_v3_9_5)
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic -fPIC -g -ggdb3)
@@ -100,21 +100,24 @@ install(TARGETS fairino_hardware
   LIBRARY DESTINATION lib/${PROJECT_NAME}
 )
 
+#copy fairino SDK lib file to specfic path
+file(MAKE_DIRECTORY 
+"${CMAKE_INSTALL_PREFIX}/lib/${PROJECT_NAME}"
+)
 
+file(COPY_FILE "libfairino/lib/libfairino.so.2.3.5" 
+"${CMAKE_INSTALL_PREFIX}/lib/libfairino.so.2.3.5" 
+)
 
-#file(COPY_FILE "libfairino/lib/libfairino.so.2.3.5" 
-#"${CMAKE_INSTALL_PREFIX}/lib/libfairino.so.2.3.5" 
-#)
+file(CREATE_LINK 
+"${CMAKE_INSTALL_PREFIX}/lib/libfairino.so.2.3.5" 
+"${CMAKE_INSTALL_PREFIX}/lib/libfairino.so.2" 
+SYMBOLIC)
 
-# file(CREATE_LINK 
-# "${CMAKE_INSTALL_PREFIX}/lib/libfairino.so.2.3.0" 
-# "${CMAKE_INSTALL_PREFIX}/lib/libfairino.so.2" 
-# SYMBOLIC)
-
-# file(CREATE_LINK 
-# "${CMAKE_INSTALL_PREFIX}/lib/libfairino.so.2" 
-# "${CMAKE_INSTALL_PREFIX}/lib/libfairino.so" 
-# SYMBOLIC)
+file(CREATE_LINK 
+"${CMAKE_INSTALL_PREFIX}/lib/libfairino.so.2" 
+"${CMAKE_INSTALL_PREFIX}/lib/libfairino.so" 
+SYMBOLIC)
 
 
 if(BUILD_TESTING)
@@ -131,39 +134,8 @@ if(BUILD_TESTING)
   ament_lint_auto_find_test_dependencies()
 endif()
 
-# --- SMART, ZERO-HARDCODING BASH ENVIRONMENT HOOK & SYMLINK CREATION ---
-
-# 1. Define raw, relocatable shell scripting logic using your exact project variables
-set(HOOK_CONTENT "
-# Dynamic lookup generated automatically by CMake for ${PROJECT_NAME}
-if [ -n \"\$COLCON_CURRENT_PREFIX\" ]; then
-    export LD_LIBRARY_PATH=\"\$LD_LIBRARY_PATH:\$COLCON_CURRENT_PREFIX/lib/${PROJECT_NAME}\"
-fi
-")
-
-# 2. Command CMake to print this snippet into a dynamic script file inside the build directory
-set(GENERATED_HOOK_FILE "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}_lib_hook.sh")
-file(WRITE "${GENERATED_HOOK_FILE}" "${HOOK_CONTENT}")
-
-# 3. Register the freshly generated .sh script as a native environment hook
-ament_environment_hooks("${GENERATED_HOOK_FILE}")
-
-# 4. Securely install the primary vendor SDK library file
-install(
-  FILES "libfairino/lib/libfairino.so.2.3.5"
-  DESTINATION lib/${PROJECT_NAME}
-)
-
-# 5. NATIVE AUTOMATION: Direct CMake to generate the required library symlinks inside the install directory
-install(CODE "
-  execute_process(COMMAND ${CMAKE_COMMAND} -E create_symlink 
-    \"libfairino.so.2.3.5\" 
-    \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/lib/${PROJECT_NAME}/libfairino.so.2\")
-    
-  execute_process(COMMAND ${CMAKE_COMMAND} -E create_symlink 
-    \"libfairino.so.2.3.5\" 
-    \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/lib/${PROJECT_NAME}/libfairino.so\")
-")
-
+#export
+ament_export_targets(fairino_hardware HAS_LIBRARY_TARGET)
+ament_export_dependencies(ament_cmake rclcpp hardware_interface pluginlib rclcpp_lifecycle)
 
 ament_package()
