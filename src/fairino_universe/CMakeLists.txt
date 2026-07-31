@@ -19,7 +19,7 @@ install(DIRECTORY launch DESTINATION share/${PROJECT_NAME}
 
 
 install(
-  DIRECTORY config meshes
+  DIRECTORY config meshes scripts
   DESTINATION share/${PROJECT_NAME}
 )
 
@@ -33,6 +33,8 @@ install(PROGRAMS
   launch/rt_state_data_SDK.py
   src/gazebo_world_to_moveit.py
   scripts/load_env_to_moveit.py
+  scripts/ros2_forwarder.py
+  scripts/fairino_8083_listener.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

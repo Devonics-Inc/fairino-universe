@@ -2,7 +2,7 @@ robot:
   robot_model: fairino5
   # the robot is agnostic regarding the robot that is online 
   robot_hardware_connected: "true"
-  robot_ip_address: "192.168.58.2"
+  robot_ip_address: "192.168.58.25"
 
 
 #environment:
@@ -15,7 +15,7 @@ simulation:
   rviz_enabled: "true"
   # for the listen only mode you need a hardware or simulator running with ip address make sure you don't set the hardware to 
   # you can't set this to true and hardware to false 
-  listen_only_mode: "false"
+  listen_only_mode: "true"
 
 
 rail:

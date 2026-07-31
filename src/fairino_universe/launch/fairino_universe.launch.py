@@ -23,9 +23,11 @@ from launch.actions import (
     IncludeLaunchDescription,
     LogInfo,
     OpaqueFunction,
+    RegisterEventHandler,
     SetEnvironmentVariable,
     TimerAction,
 )
+from launch.event_handlers import OnProcessExit
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
@@ -43,6 +45,14 @@ FAIRINO_HARDWARE_IP_HEADER = os.path.join(
 FAIRINO_HARDWARE_INTERFACE_HEADER = os.path.join(
     WORKSPACE_ROOT, "src", FAIRINO_HARDWARE_PKG_VERSION,
     "include", "fairino_hardware", "fairino_hardware_interface.hpp"
+)
+
+# SDK-based joint-state forwarder used only when robot_hardware_connected=true
+# AND listen_only_mode=true (no ros2_control command interface for the arm in
+# that mode, so this script -- talking to the SDK directly -- is the only
+# thing actually driving/reading the real robot).
+FORWARDER_SCRIPT_PATH = os.path.join(
+    get_package_share_directory("fairino_universe"), "scripts", "ros2_forwarder.py"
 )
 
 REBUILD_PACKAGES = ["fairino_hardware_v3_9_5"]
@@ -306,6 +316,7 @@ def launch_setup(context, *args, **kwargs):
     gripper_controller_filename = LaunchConfiguration("gripper_controller").perform(context)
     gripper_hardware_plugin = LaunchConfiguration("gripper_hardware_plugin").perform(context)
     listen_only_mode = LaunchConfiguration("listen_only_mode").perform(context)
+    listen_only_mode_enabled = _truthy(listen_only_mode)
 
 
 
@@ -543,30 +554,56 @@ def launch_setup(context, *args, **kwargs):
             "(controller_manager is provided by the gz_ros2_control Gazebo plugin)"
         )
 
-    # joint_state_broadcaster + arm controller spawners.
-    # NOTE: the fixed 1s delay is a simple way to wait for the
-    # controller_manager to come up. For something more robust, consider
-    # a RegisterEventHandler(OnProcessStart(...)) instead of a timer.
-    remaining_actions.append(
-            TimerAction(
-                period=1.0,
-                actions=[
-                    Node(
-                        package="controller_manager",
-                        executable="spawner",
-                        arguments=[
-                            "joint_state_broadcaster",
-                            f"{robot_model}_controller",
-                            "-c", "/controller_manager",
-                            "--controller-manager-timeout", "10",
-                            "--param-file", controllers_yaml_path,
-                        ],
-                        output="screen",
-                    )
-                ],
+    # joint_state_broadcaster + arm controller spawner.
+    # Kept as a named variable (rather than inline inside the TimerAction) so
+    # it can be used as the target_action for an OnProcessExit event handler
+    # below -- that spawner exiting is our real "controller_manager is up and
+    # the arm broadcaster is active" signal, more reliable than a fixed delay.
+    arm_broadcaster_spawner = Node(
+        package="controller_manager",
+        executable="spawner",
+        arguments=[
+            "joint_state_broadcaster",
+            f"{robot_model}_controller",
+            "-c", "/controller_manager",
+            "--controller-manager-timeout", "10",
+            "--param-file", controllers_yaml_path,
+        ],
+        output="screen",
+    )
+    remaining_actions.append(TimerAction(period=1.0, actions=[arm_broadcaster_spawner]))
+
+    # SDK-based joint-state forwarder (ros2_forwarder.py): only relevant when
+    # robot_hardware_connected=true AND listen_only_mode=true. In that mode the
+    # xacro loads mock_components/GenericSystem instead of the real
+    # FairinoHardwareInterface and drops the arm's command_interface entirely
+    # (see fairino3_v6_robot_ros2_control macro), so nothing else is talking to
+    # the real robot -- this script, going through the vendor SDK directly, is
+    # the only real connection. It must never run when control_system=='hardware'
+    # with listen_only_mode=false, since FairinoHardwareInterface owns the real
+    # connection in that case and running both would race to command the arm.
+    if hardware_enabled and listen_only_mode_enabled:
+        forwarder_process = ExecuteProcess(
+            cmd=[
+                "python3", FORWARDER_SCRIPT_PATH,
+                "--ros-args",
+                "-p", f"robot_ip:={robot_ip_address}",
+            ],
+            output="screen",
+        )
+        remaining_actions.append(
+            RegisterEventHandler(
+                event_handler=OnProcessExit(
+                    target_action=arm_broadcaster_spawner,
+                    on_exit=[forwarder_process],
+                )
             )
         )
-
+    else:
+        print(
+            "[INFO] Skipping SDK ros2_forwarder.py: only runs when "
+            "robot_hardware_connected=true and listen_only_mode=true."
+        )
 # Rail / mount controller (only if the robot isn't mounted directly to 'world')
     if mount != "world":
         rail_spawner_args = [
