@@ -328,7 +328,7 @@ class Fairino8083Listener:
 if __name__ == "__main__":
     import argparse
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--ip", default="192.168.58.2")
+    p.add_argument("--ip", default="192.168.58.25")
     p.add_argument("--port", type=int, default=8083)
     args = p.parse_args()
 

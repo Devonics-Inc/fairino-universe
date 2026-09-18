@@ -5,15 +5,12 @@ from launch.actions import (
     DeclareLaunchArgument,
     IncludeLaunchDescription,
     SetEnvironmentVariable,
-    ExecuteProcess,
-    TimerAction
 )
 from launch.substitutions import (
     Command,
     FindExecutable,
     LaunchConfiguration,
     PathJoinSubstitution,
-    TextSubstitution,
     PythonExpression
 )
 from launch_ros.actions import Node
@@ -21,7 +18,6 @@ from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.conditions import LaunchConfigurationEquals, LaunchConfigurationNotEquals, IfCondition
 from launch_ros.substitutions import FindPackageShare
 from launch.substitutions import PathJoinSubstitution, TextSubstitution, LaunchConfiguration
-import xacro
 
 """
 THIS CREATES A DIGITAL FAIRINO, THAT MIRRORS THE ROBOT AT THE IP ADDRESS SET IN /rt_state_data
