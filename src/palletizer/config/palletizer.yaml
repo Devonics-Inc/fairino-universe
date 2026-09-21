@@ -1,0 +1,19 @@
+palletizer:
+  ros__parameters:
+    planning_group: fairino5_v6_group   # CHECK: group name in your SRDF
+    ee_link: wrist3_link                # CHECK: link the box attaches to (flange or gripper link)
+    frame_id: world
+    tool_length: 0.05                   # ee_link origin -> contact point along the tool axis (m)
+    grasp_rpy: [3.14159, 0.0, 0.0]      # tool pointing down; adjust for your flange convention
+    approach_height: 0.10
+
+    box_size: [0.2, 0.2, 0.2]           # CHECK: must match the conveyor's box_size
+    pallet_top: [0.0, 0.6, 0.15]        # x, y, z of the pallet's top-surface center
+    pallet_size: [0.8, 0.6, 0.15]
+    rows: 2
+    cols: 2
+    layers: 2
+    gap: 0.01
+
+    velocity_scaling: 0.3
+    acceleration_scaling: 0.3
