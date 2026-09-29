@@ -29,36 +29,38 @@ using moveit_msgs::msg::PlanningScene;
 namespace conveyor_sim
 {
 
-// this node is responsible for 
+// this node is responsible for mainting the state of the boxes
 //  publish scene updates (box_location_   box_id_)
 //  publish box states (id & x)
 //  listen to the target need to be reached by each box 
+//  parameters: beltSpeed_ , rate , 
 class BoxAdvancer : public rclcpp::Node
 {
 public:
   BoxAdvancer()
   : Node("box_advancer"), p_(declareConveyorParams(*this))
   {
-    // configure the belt speed 
-    speed_ = declare_parameter<double>("speed", 0.15);   // m/s
-    const double rate = declare_parameter<double>("rate", 50.0);
-    dt_ = 1.0 / rate;
-    
+    // capture belt speed configuration 
+    beltSpeed_ = declare_parameter<double>("speed", 0.15);   // m/s
 
-    // publisher for scene updates
+    
+    // publisher box shift to the planning scene 
     scene_pub_ = create_publisher<PlanningScene>("/planning_scene", 10);
 
     // publisher for box states (id , distance)
     states_pub_ = create_publisher<BoxStateArray>("conveyor/box_states", 10);
 
 
-    // subscriper to each box targets 
+    // subscriber to targets published by the conveyer_manager
     targets_sub_ = create_subscription<BoxTargetArray>(
       "conveyor/box_targets", latchedQos(),
-      [this](BoxTargetArray::ConstSharedPtr msg) {onTargets(*msg);});
+      [this](BoxTargetArray::ConstSharedPtr msg) {onReceivingNewTargets(*msg);});
 
+    // timer logic 
+    const double rate = declare_parameter<double>("rate", 50.0);
+    solverStep_ = 1.0 / rate;
     timer_ = rclcpp::create_timer(
-      this, get_clock(), rclcpp::Duration::from_seconds(dt_), [this]() {step();});
+      this, get_clock(), rclcpp::Duration::from_seconds(solverStep_), [this]() {step();});
 
 
     // conveyor/hold: true = belt stopped. Latched, so a late start still sees the last state.
@@ -81,17 +83,17 @@ private:
   };
 
 
-// onTargets()
-// Take the new list of boxes that should currently exist, 
+// onReceivingNewTargets()
+// Take the new target list of boxes that should currently exist, 
 // update their positions while preserving existing positions, 
 // and remove boxes that disappeared from the list.
-  void onTargets(const BoxTargetArray & msg)
+  void onReceivingNewTargets(const BoxTargetArray & msg)
   {
-    // create a new vector of the type box 
-    std::vector<Box> next;
-    // Allocate enough memeory to capture all elements 
-    next.reserve(msg.targets.size());
+    // create a new vector of the type box  & ensure enough memory is allocated
+    std::vector<Box> updatedBoxVector;
+    updatedBoxVector.reserve(msg.targets.size());
     
+    // loop over each box in the message 
     for (const auto & t : msg.targets) {
       // get iterator toward the element where new_msg_target_id == old_box_id
       auto it = std::find_if(
@@ -99,29 +101,43 @@ private:
       
       // only if first time to see this box id give it the start_x
       const double x = (it != boxes_.end()) ? it->x : p_.start_x;
-      next.push_back({t.id, x, t.target_x});
+      updatedBoxVector.push_back({t.id, x, t.target_x});
     }
     // make boxes_ take the next content 
-    boxes_ = std::move(next);
+    boxes_ = std::move(updatedBoxVector);
   }
 
+
+
+
+  // function call back on each step
+  // advance box at each tick toward their targets
   void step()
   {
     std::vector<CollisionObject> objs;
 
+    // loop on the boxes as long as hold_ flag not raised 
     for (std::size_t i = 0; !hold_ &&  i < boxes_.size(); ++i) {
       Box & b = boxes_[i];
+      // allowed variable by default is the target movement unless we modify it later
       double allowed = b.target;
+
+      // the allowed variable is only modified if we are in the second box 
+      // allowed is a cap on how far we can advance a box
       if (i > 0) {
         allowed = std::min(allowed, boxes_[i - 1].x - p_.pitch());  // never hit the box ahead
       }
-      const double new_x = std::min(b.x + speed_ * dt_, allowed);
+
+      const double new_x = std::min(b.x + beltSpeed_ * solverStep_, allowed);
+      // if there is any small change in the state of the box we need to do an update
       if (new_x > b.x + kEps) {
         b.x = new_x;
         objs.push_back(makeMove(b));
       }
     }
 
+
+    // update the planing scene and publish the new ojbects
     if (!objs.empty()) {
       PlanningScene scene;
       scene.is_diff = true;
@@ -130,6 +146,7 @@ private:
       scene_pub_->publish(scene);
     }
 
+    // update the states and publish them
     BoxStateArray states;
     for (const auto & b : boxes_) {
       BoxState s;
@@ -140,6 +157,7 @@ private:
     states_pub_->publish(states);
   }
 
+  // turn the box data to a collision object
   CollisionObject makeMove(const Box & b) const
   {
     CollisionObject obj;
@@ -151,8 +169,8 @@ private:
   }
 
   ConveyorParams p_;
-  double speed_;
-  double dt_;
+  double beltSpeed_;
+  double solverStep_;
   std::vector<Box> boxes_;   // lead box first
 
   rclcpp::Publisher<PlanningScene>::SharedPtr scene_pub_;

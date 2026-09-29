@@ -10,15 +10,16 @@
     pick_x: 0.0              # where the lead box stops
     box_size: [0.10, 0.10, 0.10]   # x, y, z (m)
     gap: 0.05                # spacing between queued boxes
+    
 
     # --- box_advancer ---
-    speed: 0.15              # m/s
-    rate: 50.0               # Hz
+    speed: 0.5              # m/s
+    rate: 150.0               # Hz
 
     # --- conveyor_manager ---
     num_boxes: 5             # boxes kept on the belt (max = slots between start_x and pick_x)
     max_boxes: 50            # total boxes for the whole simulation
-    manager_rate: 10.0       # Hz
+    manager_rate: 150.0       # Hz
 
     # --- proximity_sensor ---
     clear_dist: 0.08         # box counts as removed once this far from the pick point (m)

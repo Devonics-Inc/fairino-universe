@@ -32,29 +32,48 @@ using std_srvs::srv::Trigger;
 namespace conveyor_sim
 {
 
+
+// this node is responsible for the following 
+// - publish box targets (box_id, box_target)
+// - determine whether to send a spwan request or not 
+// - hold infomration regarding the total number of spawned boxes and removed
+// -
 class ConveyorManager : public rclcpp::Node
 {
 public:
   ConveyorManager()
   : Node("conveyor_manager"), p_(declareConveyorParams(*this))
   {
+    // capture the max number of boxes on belt during simulation 
+    maxBoxesOnBelt_ = declare_parameter<int64_t>("num_boxes", 3);
     num_boxes_ = declare_parameter<int64_t>("num_boxes", 3);   // boxes kept on the belt
+
+    // capture the total number of boxes on the pallet
+    totalPalletBoxes_ = declare_parameter<int64_t>("max_boxes", 50); 
     max_boxes_ = declare_parameter<int64_t>("max_boxes", 50);  // total boxes for the run
     const double rate = declare_parameter<double>("manager_rate", 10.0);
 
-    if (num_boxes_ < 1 || static_cast<std::size_t>(num_boxes_) > p_.numSlots()) {
-      throw std::invalid_argument(
-              "num_boxes must be between 1 and " + std::to_string(p_.numSlots()) +
-              " (the number of slots that fit between start_x and pick_x)");
-    }
+    // make sure that the max boxes on belts are geometrically feasible 
+    validateNumberOfBoxes();
 
-    targets_pub_ = create_publisher<BoxTargetArray>("conveyor/box_targets", latchedQos());
-    present_pub_ = create_publisher<std_msgs::msg::Bool>("conveyor/box_present", 10);
+
+    // create a publisher for the box targets {box_id_   box_target_x}
+    boxTargets_Pub = create_publisher<BoxTargetArray>("conveyor/box_targets", latchedQos());
+    
+    // the targets is usually consumed by the adavncer 
+
+
+    // if there is any object at the pick up this publisher inform the robot with the coordinates
+    // and whether there is box or not 
+    isBoxAtPickUp_pub_ = create_publisher<std_msgs::msg::Bool>("conveyor/box_present", 10);
+    // id of the box at the pickup 
     at_pick_pub_ = create_publisher<std_msgs::msg::String>("conveyor/box_at_pick", 10);
 
+    // subscriber to the state of the box 
     states_sub_ = create_subscription<BoxStateArray>(
       "conveyor/box_states", 10,
       [this](BoxStateArray::ConstSharedPtr msg) {onStates(*msg);});
+
     removed_sub_ = create_subscription<std_msgs::msg::String>(
       "conveyor/box_removed", 10,
       [this](std_msgs::msg::String::ConstSharedPtr msg) {onRemoved(msg->data);});
@@ -65,32 +84,78 @@ public:
 
     publishTargets();  // start from an empty belt
     timer_ = rclcpp::create_timer(
-      this, get_clock(), rclcpp::Duration::from_seconds(1.0 / rate), [this]() {tick();});
+      this, get_clock(), rclcpp::Duration::from_seconds(1.0 / 30), [this]() {tick();});
   }
 
 private:
+
   void tick()
   {
-    maybeSpawn();
+    trySpawnNextBox();
     publishStatus();
   }
 
-  // ---------- filling the belt ----------
-  void maybeSpawn()
+  void validateNumberOfBoxes()
   {
-    if (spawn_in_flight_ ||
-      static_cast<int64_t>(queue_.size()) >= num_boxes_ ||
-      spawned_ >= max_boxes_ ||
-      !entryClear())
-    {
-      return;
+    if (num_boxes_ < 1 || static_cast<std::size_t>(num_boxes_) > p_.numSlots()) {
+      throw std::invalid_argument(
+              "num_boxes must be between 1 and " + std::to_string(p_.numSlots()) +
+              " (the number of slots that fit between start_x and pick_x)");
     }
-    if (!spawn_client_->service_is_ready()) {
+  }
+
+
+  // isMaxCapacityReached()
+  // this function returns whther we reached max capacity or not 
+  // within the current belt configuration 
+  bool isMaxCapacityReached()
+  {
+    return static_cast<int64_t>(queue_.size()) >= num_boxes_ ;
+  }
+
+  bool spawnedAllBoxes()
+  {
+    return spawned_ >= max_boxes_;
+  }
+
+  bool isSpawnServiceNotReady()
+  {
+    if(spawn_client_->service_is_ready())
+    {      
       RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 5000, "Waiting for conveyor/spawn_box");
+
+      return false;
+    }
+    else
+    {
+      return true;
+    }
+  }
+
+  // trySpawnNextBox
+  // this function validates wether we need to spawn something for this tick or not
+  // then sends a request for the spawn service 
+  void trySpawnNextBox()
+  {
+    // validate that we can or should spawn a new box ! 
+    // if we already reqeusted a spawn from the box_Spawner or we reached max number of boxes
+    // or we already spawned the max number of boxes 
+    if (isPreviousSpawnInProcess_ ||
+        isMaxCapacityReached() ||
+        spawnedAllBoxes() ||
+        isSpawnAreaNotClear() ||
+        isSpawnServiceNotReady()
+      
+      )
+
+    {
+      // skip the rest
       return;
     }
 
-    spawn_in_flight_ = true;
+
+    // set the variable that represent process to true and send spawn reqeust
+    isPreviousSpawnInProcess_ = true;
     spawn_client_->async_send_request(
       std::make_shared<Trigger::Request>(),
       [this](rclcpp::Client<Trigger>::SharedFuture future) {onSpawned(*future.get());});
@@ -98,7 +163,7 @@ private:
 
   void onSpawned(const Trigger::Response & res)
   {
-    spawn_in_flight_ = false;
+    isPreviousSpawnInProcess_ = false;
     if (!res.success) {
       RCLCPP_WARN_THROTTLE(
         get_logger(), *get_clock(), 5000, "Spawn failed: %s (will retry)", res.message.c_str());
@@ -109,17 +174,25 @@ private:
     publishTargets();
   }
 
+  
+
   // The belt start is clear once the last box has moved at least one pitch away from it.
-  bool entryClear() const
+  bool isSpawnAreaNotClear() const
   {
+
+    bool notclear = true;
+    bool clear = false;
+
+    // if we have zero boxes on the belt, the area is clear(not clear = false)
     if (queue_.empty()) {
-      return true;
+      return clear;
     }
+
     auto it = positions_.find(queue_.back());
     if (it == positions_.end()) {
-      return false;  // just spawned, advancer hasn't reported it yet
+      return notclear;  // just spawned, advancer hasn't moved it yet
     }
-    return it->second - p_.start_x >= p_.pitch() - kEps;
+    return !(it->second - p_.start_x >= p_.pitch() - kEps);
   }
 
   // ---------- reacting to the sensor ----------
@@ -135,6 +208,8 @@ private:
     publishTargets();
   }
 
+
+  // update the positions values
   void onStates(const BoxStateArray & msg)
   {
     positions_.clear();
@@ -143,7 +218,7 @@ private:
     }
   }
 
-  // ---------- outputs ----------
+  // this function build array of targets and publish them using boxTargets_Pub
   void publishTargets()
   {
     BoxTargetArray msg;
@@ -153,13 +228,15 @@ private:
       t.target_x = p_.slotX(k);
       msg.targets.push_back(t);
     }
-    targets_pub_->publish(msg);
+    boxTargets_Pub->publish(msg);
   }
 
   void publishStatus()
   {
     bool at_pick = false;
     double lead_x = 0.0;
+
+    // only if the queue have elements check if the first element reached location
     if (!queue_.empty()) {
       auto it = positions_.find(queue_.front());
       if (it != positions_.end() && std::abs(it->second - p_.pick_x) < kEps) {
@@ -173,7 +250,7 @@ private:
     std_msgs::msg::Bool present;  
     
     present.data = at_pick;
-    present_pub_->publish(present);
+    isBoxAtPickUp_pub_->publish(present);
 
     std_msgs::msg::String id;
     id.data = at_pick ? queue_.front() : "";
@@ -188,17 +265,22 @@ private:
       pick_pose_pub_->publish(pose);
     }
   }
+  
   ConveyorParams p_;
   int64_t num_boxes_;
   int64_t max_boxes_;
 
+  int64_t maxBoxesOnBelt_ ;
+  int64_t totalPalletBoxes_;
   std::deque<std::string> queue_;                       // lead box first
+
+  // unordered map that connect between id and position
   std::unordered_map<std::string, double> positions_;   // latest x from the advancer
   int64_t spawned_{0};
-  bool spawn_in_flight_{false};
+  bool isPreviousSpawnInProcess_{false};
 
-  rclcpp::Publisher<BoxTargetArray>::SharedPtr targets_pub_;
-  rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr present_pub_;
+  rclcpp::Publisher<BoxTargetArray>::SharedPtr boxTargets_Pub;
+  rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr isBoxAtPickUp_pub_;
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr at_pick_pub_;
   rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pick_pose_pub_;
   rclcpp::Subscription<BoxStateArray>::SharedPtr states_sub_;

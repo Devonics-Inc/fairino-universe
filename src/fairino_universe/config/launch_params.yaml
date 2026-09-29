@@ -15,7 +15,7 @@ simulation:
   rviz_enabled: "true"
   # for the listen only mode you need a hardware or simulator running with ip address make sure you don't set the hardware to 
   # you can't set this to true and hardware to false 
-  listen_only_mode: "false"
+  listen_only_mode: "true"
 
 
 rail:
@@ -29,7 +29,8 @@ rail:
   
 gripper:
   # options: dh_ag95 | dh_ag145 | dh_pgc140 | dh_ag3
-  # gripper: dh_ag95
+  gripper: dh_ag95
+  # add a gripper offset ! 
   gripper_controller: gripper_controllers.yaml
   gripper_hardware_connected: "false"
   gripper_hardware_plugin: "fairino_hardware/GripperHardwareInterface_NOT_IMPLEMENTED"

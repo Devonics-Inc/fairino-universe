@@ -22,6 +22,7 @@ find_package(std_srvs REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(conveyor_interfaces REQUIRED)
 
+
 set(NODES box_spawner box_advancer conveyor_manager proximity_sensor)
 
 foreach(node ${NODES})

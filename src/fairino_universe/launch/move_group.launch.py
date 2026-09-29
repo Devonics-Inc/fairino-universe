@@ -77,6 +77,7 @@ def launch_setup(context, *args, **kwargs):
         "publish_transforms_updates": True,
         "publish_robot_description": False,
         "publish_robot_description_semantic": True,
+        "publish_planning_scene_hz": 30.0,
     }
 
     move_group_parameters = [

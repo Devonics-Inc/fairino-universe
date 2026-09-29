@@ -65,6 +65,7 @@ private:
   // spawn the belt object
   void addBelt()
   {
+    // check if the server is ready before sending any requests
     if (!apply_client_->service_is_ready()) {
       RCLCPP_INFO_THROTTLE(
         get_logger(), *get_clock(), 5000,

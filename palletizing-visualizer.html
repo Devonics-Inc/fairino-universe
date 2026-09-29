@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Palletizing Visualizer</title>
+  <style>
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      background: #fff;
+      color: #1a1a1a;
+      font: 15px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+
+    .page {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 48px 24px 64px;
+    }
+
+    h1 {
+      font-size: 26px;
+      font-weight: 600;
+      margin: 0 0 4px;
+    }
+
+    .subtitle {
+      color: #666;
+      margin: 0 0 28px;
+    }
+
+    .viz-window {
+      position: relative;
+      width: 640px;
+      height: 400px;
+      max-width: 100%;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      overflow: hidden;
+      background: #fff;
+    }
+
+    #viz {
+      display: block;
+      width: 100%;
+      height: 100%;
+      border: 0;
+    }
+
+    .loading {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      background: #fff;
+      color: #666;
+      font-size: 14px;
+      transition: opacity .3s ease;
+    }
+
+    .loading.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .spinner {
+      width: 28px;
+      height: 28px;
+      border: 3px solid #e5e5e5;
+      border-top-color: #555;
+      border-radius: 50%;
+      animation: spin .8s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* --- control menu --- */
+    .controls {
+      width: 640px;
+      max-width: 100%;
+      box-sizing: border-box;
+      margin-top: 12px;
+      padding: 14px 16px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+    }
+
+    .controls-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+
+    .controls-head h2 {
+      font-size: 16px;
+      font-weight: 600;
+      margin: 0;
+    }
+
+    .status {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      color: #666;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #bbb;
+    }
+    .status.online  .dot { background: #2e9d52; }
+    .status.offline .dot { background: #c9412e; }
+
+    .buttons {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    button {
+      font: inherit;
+      font-size: 14px;
+      padding: 7px 14px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      background: #fafafa;
+      color: #1a1a1a;
+      cursor: pointer;
+    }
+    button:hover:not(:disabled) { background: #f0f0f0; }
+    button:focus-visible { outline: 2px solid #3b6fd4; outline-offset: 2px; }
+    button:disabled { opacity: .45; cursor: not-allowed; }
+
+    button.primary {
+      background: #1a1a1a;
+      border-color: #1a1a1a;
+      color: #fff;
+    }
+    button.primary:hover:not(:disabled) { background: #333; }
+
+    button.stop {
+      border-color: #c9412e;
+      color: #c9412e;
+      background: #fff;
+    }
+    button.stop:hover:not(:disabled) { background: #fdf1ef; }
+
+    .hint {
+      font-size: 12px;
+      color: #888;
+      margin: 8px 0 0;
+    }
+
+    .colors {
+      margin-top: 14px;
+      border-top: 1px solid #eee;
+      padding-top: 12px;
+    }
+
+    .colors h3 {
+      font-size: 14px;
+      font-weight: 600;
+      margin: 0 0 8px;
+    }
+
+    .color-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .color-row .name {
+      width: 56px;
+      font-size: 14px;
+      color: #444;
+    }
+
+    .swatch {
+      width: 26px;
+      height: 26px;
+      padding: 0;
+      border-radius: 50%;
+      border: 2px solid #fff;
+      box-shadow: 0 0 0 1px #ccc;
+    }
+    .swatch[aria-pressed="true"] { box-shadow: 0 0 0 2px #1a1a1a; }
+
+    input[type="color"] {
+      width: 34px;
+      height: 28px;
+      padding: 2px;
+      cursor: pointer;
+    }
+
+    details {
+      margin-top: 14px;
+      border-top: 1px solid #eee;
+      padding-top: 10px;
+    }
+
+    summary {
+      cursor: pointer;
+      font-size: 14px;
+      color: #444;
+    }
+
+    .custom {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .custom label {
+      display: flex;
+      flex-direction: column;
+      font-size: 12px;
+      color: #666;
+      gap: 3px;
+    }
+
+    .custom .full { grid-column: 1 / -1; }
+
+    input, textarea {
+      font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+      padding: 6px 8px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      color: #1a1a1a;
+    }
+    textarea { min-height: 64px; resize: vertical; }
+    input:focus, textarea:focus { outline: 2px solid #3b6fd4; outline-offset: 0; border-color: transparent; }
+
+    .log {
+      margin-top: 10px;
+      font-size: 13px;
+      color: #666;
+      min-height: 1.6em;
+    }
+    .log.error { color: #c9412e; }
+
+    .notes {
+      margin-top: 28px;
+      color: #444;
+    }
+
+    .notes h2 {
+      font-size: 16px;
+      font-weight: 600;
+      margin: 0 0 8px;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .spinner { animation: none; }
+      .loading { transition: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <h1>Palletizing Visualizer</h1>
+    <p class="subtitle">Live 3D view of the palletizing cell — arm pose, gripper state, and current stack layout.</p>
+
+    <div class="viz-window">
+      <div class="loading" id="loading">
+        <div class="spinner"></div>
+        <span>Connecting to robot…</span>
+      </div>
+
+      <iframe
+        id="viz"
+        title="Robot 3D view"
+        src="http://localhost:8081/?ds=foxglove-websocket&amp;ds.url=ws://localhost:8765"
+        allow="fullscreen; cross-origin-isolated"
+      ></iframe>
+    </div>
+
+    <!-- Command menu: talks to ROS directly through rosbridge, independent of the iframe -->
+    <section class="controls" aria-label="Robot commands">
+      <div class="controls-head">
+        <h2>Commands</h2>
+        <div class="status" id="status" role="status">
+          <span class="dot"></span><span id="status-text">Connecting…</span>
+        </div>
+      </div>
+
+      <div class="buttons">
+        <button class="primary" data-cmd="start" disabled>Start cycle</button>
+        <button data-cmd="pause" disabled>Pause</button>
+        <button data-cmd="home" disabled>Go home</button>
+        <button class="stop" data-cmd="stop" disabled>Stop</button>
+      </div>
+      <p class="hint">Software stop only. Use the robot's hardware E-stop in an emergency.</p>
+
+      <div class="colors">
+        <h3>Colors</h3>
+        <div class="color-row" data-param="box_color">
+          <span class="name">Boxes</span>
+          <!-- swatches are generated by the script -->
+          <input type="color" value="#c8894a" aria-label="Custom box color" />
+        </div>
+        <div class="color-row" data-param="pallet_color">
+          <span class="name">Pallet</span>
+          <input type="color" value="#8a6a45" aria-label="Custom pallet color" />
+        </div>
+        <button id="apply-colors" disabled>Apply colors</button>
+      </div>
+
+      <details>
+        <summary>Send a custom message</summary>
+        <div class="custom">
+          <label>Topic
+            <input id="c-topic" value="/lichtblick_test" spellcheck="false" />
+          </label>
+          <label>Message type
+            <input id="c-type" value="std_msgs/msg/String" spellcheck="false" />
+          </label>
+          <label class="full">Message (JSON)
+            <textarea id="c-msg" spellcheck="false">{"data": "hello from the menu"}</textarea>
+          </label>
+          <div class="full">
+            <button id="c-send" disabled>Publish</button>
+          </div>
+        </div>
+      </details>
+
+      <div class="log" id="log" aria-live="polite"></div>
+    </section>
+
+    <div class="notes">
+      <h2>About this view</h2>
+      <p>
+        The scene streams from the controller over a websocket connection and updates in real
+        time as boxes are picked from the infeed conveyor and placed onto the pallet. Layer
+        patterns, approach angles, and gripper offsets are all driven by the active recipe.
+      </p>
+      <p>
+        Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor
+        incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud
+        exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.
+      </p>
+    </div>
+  </div>
+
+  <script>
+    // ---------- iframe loading overlay ----------
+    const frame = document.getElementById('viz');
+    const loading = document.getElementById('loading');
+    frame.addEventListener('load', () => loading.classList.add('hidden'));
+
+    // ---------- config: edit these to match your nodes ----------
+    const ROSBRIDGE_URL = 'ws://localhost:9090';
+    const COMMAND_TOPIC = '/palletizer/command';
+    const COMMAND_TYPE  = 'std_msgs/msg/String';
+    const PALLETIZER_NODE = '/palletizer';   // node that owns box_color / pallet_color
+
+    const PRESETS = {
+      box_color:    ['#c8894a', '#e0c28f', '#3b6fd4', '#2e9d52', '#c9412e'],
+      pallet_color: ['#8a6a45', '#b99466', '#4a4a4a', '#3b6fd4'],
+    };
+
+    // ---------- minimal rosbridge client (plain JSON over WebSocket) ----------
+    const statusEl = document.getElementById('status');
+    const statusText = document.getElementById('status-text');
+    const logEl = document.getElementById('log');
+    const actionButtons = document.querySelectorAll('button[data-cmd], #c-send, #apply-colors');
+    const pendingCalls = new Map();   // call id -> callback
+
+    let ws = null;
+    let advertised = new Map();   // topic -> type
+    let retryDelay = 1000;
+
+    function setStatus(online, text) {
+      statusEl.classList.toggle('online', online);
+      statusEl.classList.toggle('offline', !online);
+      statusText.textContent = text;
+      actionButtons.forEach(b => (b.disabled = !online));
+    }
+
+    function log(text, isError = false) {
+      logEl.textContent = text;
+      logEl.classList.toggle('error', isError);
+    }
+
+    function connect() {
+      ws = new WebSocket(ROSBRIDGE_URL);
+
+      ws.onopen = () => {
+        advertised = new Map();   // rosbridge forgets advertisements on reconnect
+        retryDelay = 1000;
+        setStatus(true, 'Connected');
+      };
+
+      ws.onmessage = (event) => {
+        // rosbridge reports problems (bad type, bad fields) as status messages
+        try {
+          const msg = JSON.parse(event.data);
+          if (msg.op === 'status' && msg.level === 'error') log(msg.msg, true);
+          if (msg.op === 'service_response' && pendingCalls.has(msg.id)) {
+            pendingCalls.get(msg.id)(msg);
+            pendingCalls.delete(msg.id);
+          }
+        } catch { /* ignore non-JSON */ }
+      };
+
+      ws.onclose = () => {
+        setStatus(false, `Not connected to ${ROSBRIDGE_URL}. Retrying…`);
+        setTimeout(connect, retryDelay);
+        retryDelay = Math.min(retryDelay * 2, 10000);
+      };
+
+      ws.onerror = () => ws.close();
+    }
+
+    function publish(topic, type, msg) {
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        log('Not connected to rosbridge.', true);
+        return;
+      }
+      if (advertised.get(topic) !== type) {
+        ws.send(JSON.stringify({ op: 'advertise', topic, type }));
+        advertised.set(topic, type);
+      }
+      ws.send(JSON.stringify({ op: 'publish', topic, msg }));
+      log(`Published to ${topic} at ${new Date().toLocaleTimeString()}`);
+    }
+
+    // ---------- wire up the buttons ----------
+    document.querySelectorAll('button[data-cmd]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        publish(COMMAND_TOPIC, COMMAND_TYPE, { data: btn.dataset.cmd });
+      });
+    });
+
+    document.getElementById('c-send').addEventListener('click', () => {
+      const topic = document.getElementById('c-topic').value.trim();
+      const type = document.getElementById('c-type').value.trim();
+      let msg;
+      try {
+        msg = JSON.parse(document.getElementById('c-msg').value);
+      } catch (e) {
+        log('Message is not valid JSON: ' + e.message, true);
+        return;
+      }
+      if (!topic.startsWith('/')) {
+        log('Topic must start with "/".', true);
+        return;
+      }
+      publish(topic, type, msg);
+    });
+
+    // ---------- service calls ----------
+    let callCounter = 0;
+    function callService(service, args, onResponse) {
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        log('Not connected to rosbridge.', true);
+        return;
+      }
+      const id = `call_${++callCounter}`;
+      pendingCalls.set(id, onResponse);
+      ws.send(JSON.stringify({ op: 'call_service', id, service, args }));
+    }
+
+    // ---------- colors ----------
+    document.querySelectorAll('.color-row').forEach(row => {
+      const picker = row.querySelector('input[type="color"]');
+      const swatches = PRESETS[row.dataset.param].map(hex => {
+        const s = document.createElement('button');
+        s.className = 'swatch';
+        s.type = 'button';
+        s.style.background = hex;
+        s.setAttribute('aria-label', hex);
+        s.setAttribute('aria-pressed', String(hex === picker.value));
+        s.addEventListener('click', () => {
+          picker.value = hex;
+          swatches.forEach(o => o.setAttribute('aria-pressed', String(o === s)));
+        });
+        row.insertBefore(s, picker);
+        return s;
+      });
+      picker.addEventListener('input', () => {
+        swatches.forEach(o => o.setAttribute('aria-pressed', String(o.style.background && rgbToHex(o.style.background) === picker.value)));
+      });
+    });
+
+    function rgbToHex(rgb) {
+      const m = rgb.match(/\d+/g);
+      return m ? '#' + m.slice(0, 3).map(n => (+n).toString(16).padStart(2, '0')).join('') : rgb;
+    }
+
+    document.getElementById('apply-colors').addEventListener('click', () => {
+      // rcl_interfaces/msg/ParameterType: 4 = STRING
+      const parameters = [...document.querySelectorAll('.color-row')].map(row => ({
+        name: row.dataset.param,
+        value: { type: 4, string_value: row.querySelector('input[type="color"]').value },
+      }));
+
+      callService(`${PALLETIZER_NODE}/set_parameters`, { parameters }, (res) => {
+        if (res.result === false) {
+          log(`Could not reach ${PALLETIZER_NODE}/set_parameters. Is the node running?`, true);
+          return;
+        }
+        const failed = (res.values?.results || []).filter(r => !r.successful);
+        if (failed.length) {
+          log('Node rejected the colors: ' + failed.map(r => r.reason || 'no reason given').join('; '), true);
+        } else {
+          log('Colors applied.');
+        }
+      });
+    });
+
+    connect();
+  </script>
+</body>
+</html>

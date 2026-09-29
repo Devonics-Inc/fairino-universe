@@ -15,7 +15,6 @@
 
 #include <Eigen/Geometry>
 #include <moveit/planning_scene_monitor/planning_scene_monitor.h>
-
 #include "conveyor_sim/conveyor_common.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/string.hpp"
@@ -29,14 +28,22 @@ public:
   ProximitySensor()
   : Node("proximity_sensor"), p_(declareConveyorParams(*this))
   {
+    // distance needed to consider the object cleared 
     clear_dist_ = declare_parameter<double>("clear_dist", 0.08);    // m from the pick point
+    
+    // number of times needed to check for box removal  
     debounce_ = declare_parameter<int64_t>("debounce_cycles", 3);
+    
+    // rate at which proximity gets checked
     rate_ = declare_parameter<double>("sensor_rate", 20.0);
+
+    // position for pick and place
     pick_pos_ = Eigen::Vector3d(p_.pick_x, p_.belt_y, p_.boxZ());
 
+    // publish the id of the box removed
     removed_pub_ = create_publisher<std_msgs::msg::String>("conveyor/box_removed", 10);
     
-    // create a subscribtion to box_at_pick topic
+    // create a subscribtion to the id of a box arriving at pickup! 
     at_pick_sub_ = create_subscription<std_msgs::msg::String>(
       "conveyor/box_at_pick", 10,
       [this](std_msgs::msg::String::ConstSharedPtr msg) {onAtPick(msg->data);});
@@ -62,6 +69,10 @@ public:
 private:
   void onAtPick(const std::string & id)
   {
+    // conveyor advancer is responsible for publishing id of the box at pick up
+    // the proximity sensor take the id of the box at pick up
+    // check that the id of the box arrived is not empty
+
     if (id.empty() || id == watched_ || id == last_removed_) {
       return;
     }
@@ -75,12 +86,15 @@ private:
   
   void check()
   {
+    // let's check if the box have been removed or not
     if (watched_.empty()) {
       return;
     }
 
     bool in_scene = false;
     double dist = 0.0;
+    
+    // check if the objcet is within distance tolerance 
     {
       planning_scene_monitor::LockedPlanningSceneRO scene(psm_);
       // Works for a box on the belt (world object) and a box attached to the gripper.
@@ -97,6 +111,8 @@ private:
       return;
     }
 
+
+    // whether the object is vanished from the sene or location exceed distance 
     const bool clear = !in_scene || dist > clear_dist_;
     clear_count_ = clear ? clear_count_ + 1 : 0;
 
