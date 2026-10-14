@@ -8,3 +8,5 @@ __pycache__/
 build/
 install/
 log/
+/src/lichtblick-embedded/
+src/fairino_universe/meshes/
