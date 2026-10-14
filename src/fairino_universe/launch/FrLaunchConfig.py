@@ -46,6 +46,9 @@ class FrLaunchConfig:
     hardware_enabled: bool
     rviz_enabled: bool
     clean_start_enabled: bool
+    rebuild_plugin_enabled: bool
+    foxglove_bridge_port: str
+    
 
     # -----------------------------------------------------------------------
     # Derived: execution mode

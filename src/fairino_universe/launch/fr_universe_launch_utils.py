@@ -377,12 +377,28 @@ def declare_launch_arguments(launch_params):
             description="IP address of the physical Fairino arm controller "
                         "(used when robot_hardware_connected is true).",
         ),
+
+        DeclareLaunchArgument(
+            "rebuild_plugin",
+            default_value=str(launch_params.get("rebuild_plugin", "false")),
+            description="should rebuild the hardware plugin or not ! "
+                        "(used when robot_hardware_connected and the ip address changed recently).",
+        ),
+
+        DeclareLaunchArgument(
+            "foxglove_bridge_port",
+            default_value=str(launch_params.get("foxglove_bridge_port", "8765")),
+            description="port to visualize the data "
+                        "(used to bridge to lichblick).",
+        ),
+
+
         ]
 
         return declared_arguments
     
 
-def build_configured_interface(robot_ip_address):
+def build_configured_interface(robot_ip_address,rebuild_plugin_enabled):
     """
     Writes the controller IP into fairino_hardware's headers and rebuilds it.
 
@@ -394,7 +410,8 @@ def build_configured_interface(robot_ip_address):
     patch_define_macro(
         FAIRINO_HARDWARE_INTERFACE_HEADER, "CONTROLLER_IP_ADDRESS", robot_ip_address
     )
-    rebuild_packages(WORKSPACE_ROOT, REBUILD_PACKAGES)
+    if(rebuild_plugin_enabled):
+        rebuild_packages(WORKSPACE_ROOT, REBUILD_PACKAGES)
 
 
 def resolve_config(context) -> FrLaunchConfig:
@@ -409,6 +426,8 @@ def resolve_config(context) -> FrLaunchConfig:
     deleting a DeclareLaunchArgument but leaving its use in place.
     """
     def s(name):
+        # create a substiution object for the (name) using LaunchConfiguration then we perfrom context over it to 
+        # evaluate it's value
         return LaunchConfiguration(name).perform(context)
 
     return FrLaunchConfig(
@@ -429,4 +448,6 @@ def resolve_config(context) -> FrLaunchConfig:
         hardware_enabled=_truthy(s("robot_hardware_connected")),
         rviz_enabled=_truthy(s("rviz_enabled")),
         clean_start_enabled=_truthy(s("simulation_clean_start")),
+        rebuild_plugin_enabled=_truthy(s("rebuild_plugin")),
+        foxglove_bridge_port = s("foxglove_bridge_port"),
     )

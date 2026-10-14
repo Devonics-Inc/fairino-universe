@@ -7,15 +7,23 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include <array>
+#include <string>
 
 #include "geometry_msgs/msg/pose.hpp"
+#include "shape_msgs/msg/solid_primitive.hpp"
 #include "rclcpp/rclcpp.hpp"
 
 namespace conveyor_sim
 {
 
+
+
 constexpr double kEps = 1e-6;
 constexpr double kLift = 0.002;  // tiny lift off the belt to avoid surface-contact collisions
+
+
+
 
 struct ConveyorParams
 {

@@ -39,6 +39,10 @@ PLANNING_SCENE_RELAY_PATH = os.path.join(
 )
 
 
+LICHTBLICK_BUNDLE = os.path.expanduser(
+    "~/github/fairino-universe/src/lichtblick-embedded/embed/.webpack"
+)
+
 # joint(s) actuated by each supported gripper, kept for reference / future use
 # if per-gripper controller parameter generation is reintroduced. (not useful right now)
 GRIPPER_JOINT_MAP = {
@@ -346,25 +350,8 @@ def append_moveit_actions(cfg, actions, world_sdf_path):
         )
     )
     
-    actions.append(
-        Node(
-            package="foxglove_bridge",
-            executable="foxglove_bridge",
-            name="foxglove_bridge",
-            output="screen",
-            respawn=True,
-            respawn_delay=2.0,
-            parameters=[{
-                "port": 8765,
-                "address": "0.0.0.0",
-                "use_sim_time": False,
-                "asset_uri_allowlist": [
-                    r"^package://(?:[-\w%]+/)*[-\w%]+\.(?:dae|DAE|fbx|glb|gltf|jpeg|jpg"
-                    r"|mtl|obj|png|stl|STL|tif|tiff|urdf|webp|xacro)$"
-                ],
-            }],
-        )
-    )
+
+
     if cfg.rviz_enabled:
         kinematics_yaml = load_yaml(cfg.moveit_pkg, "config/kinematics.yaml")
         actions.append(
@@ -395,3 +382,60 @@ def append_moveit_actions(cfg, actions, world_sdf_path):
                 output="screen",
             )
         )
+
+
+def append_visualization_actions(cfg,actions):
+
+
+    actions.append(
+        Node(
+            package="foxglove_bridge",
+            executable="foxglove_bridge",
+            name="foxglove_bridge",
+            output="screen",
+            respawn=True,
+            respawn_delay=2.0,
+            parameters=[{
+                "port": int(cfg.foxglove_bridge_port),
+                "address": "0.0.0.0",
+                "use_sim_time": False,
+                "asset_uri_allowlist": [
+                    r"^package://(?:[-\w%]+/)*[-\w%]+\.(?:dae|DAE|fbx|glb|gltf|jpeg|jpg"
+                    r"|mtl|obj|png|stl|STL|tif|tiff|urdf|webp|xacro)$"
+                ],
+            }],
+        )
+    )
+    
+    actions.append(
+        Node(
+            package="rosbridge_server",
+            executable="rosbridge_websocket",
+            name="rosbridge_websocket",
+            output="screen",
+            respawn=True,
+            respawn_delay=2.0,
+            parameters=[{
+                "port": 9090,
+                "address": "",          # empty = listen on all interfaces
+                "use_sim_time": False,
+            }],
+        )
+    )
+
+    # only load all bridges if we launch in the sim mode 
+    if(int(cfg.foxglove_bridge_port)==8765):
+
+    # Static servers for the Lichtblick embed bundle (run `yarn embed:build:prod` first)
+    # 8081 = Simulation view, 8082 = Current status view
+        for name, port in [("lichtblick_sim", 8081), ("lichtblick_live", 8082)]:
+            actions.append(
+                ExecuteProcess(
+                    cmd=["python3", "-m", "http.server", str(port),
+                        "--directory", LICHTBLICK_BUNDLE],
+                    name=name,
+                    output="screen",
+                    respawn=True,
+                    respawn_delay=2.0,
+                )
+            )

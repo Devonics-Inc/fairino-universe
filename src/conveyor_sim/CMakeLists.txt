@@ -23,7 +23,7 @@ find_package(Eigen3 REQUIRED)
 find_package(conveyor_interfaces REQUIRED)
 
 
-set(NODES box_spawner box_advancer conveyor_manager proximity_sensor)
+set(NODES box_spawner box_advancer conveyor_manager proximity_sensor scene_gateway)
 
 foreach(node ${NODES})
   add_executable(${node} src/${node}.cpp)
@@ -33,13 +33,16 @@ foreach(node ${NODES})
 endforeach()
 
 ament_target_dependencies(box_spawner
-  rclcpp geometry_msgs moveit_msgs shape_msgs std_srvs)
+  rclcpp geometry_msgs moveit_msgs shape_msgs std_msgs std_srvs conveyor_interfaces moveit_msgs)
 ament_target_dependencies(box_advancer
   rclcpp geometry_msgs moveit_msgs conveyor_interfaces)
 ament_target_dependencies(conveyor_manager
-  rclcpp geometry_msgs std_msgs std_srvs conveyor_interfaces)
+  rclcpp geometry_msgs std_msgs std_srvs conveyor_interfaces shape_msgs moveit_msgs)
 ament_target_dependencies(proximity_sensor
   rclcpp geometry_msgs std_msgs moveit_core moveit_ros_planning Eigen3)
+ament_target_dependencies(scene_gateway
+  rclcpp moveit_msgs shape_msgs geometry_msgs std_msgs conveyor_interfaces)
+
 
 install(TARGETS ${NODES}
   DESTINATION lib/${PROJECT_NAME})

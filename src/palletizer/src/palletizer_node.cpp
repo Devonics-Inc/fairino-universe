@@ -1,12 +1,15 @@
 // palletizer_node: executes the targets pallet_planner sends. It never decides where a box goes.
 //
 // Input   pallet/target        palletizer_msgs/PalletTarget (box id, pick pose, place pose, size)
+//         palletizer/speed     std_msgs/Float64 speed multiplier (1.0 = normal, 3.0 = 3x faster)
 // Output  pallet/place_result  palletizer_msgs/PlaceResult
 //         conveyor/hold        std_msgs/Bool (latched), true for the whole cycle
 //
 // Cycle: pre-grasp -> straight down -> attach -> lift -> pre-place -> straight down ->
 //        detach -> retreat. Stops after a failed cycle so it never grabs a box twice.
 
+#include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <memory>
@@ -23,6 +26,7 @@
 #include "palletizer_msgs/msg/place_result.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/bool.hpp"
+#include "std_msgs/msg/float64.hpp"
 
 using namespace std::chrono_literals;
 using geometry_msgs::msg::Pose;
@@ -43,6 +47,8 @@ public:
     tool_length_ = param<double>("tool_length", 0.10);
     grasp_clearance_ = param<double>("grasp_clearance", 0.005);
     approach_ = param<double>("approach_height", 0.10);
+    max_speed_ = param<double>("max_speed", 10.0);
+    speed_ = limitSpeed(param<double>("speed", 1.0));
     const auto rpy = param<std::vector<double>>("grasp_rpy", {M_PI, 0.0, 0.0});
     grasp_q_ = rpyToQuat(rpy.at(0), rpy.at(1), rpy.at(2));
 
@@ -60,6 +66,17 @@ public:
         }
         next_ = *m;
       });
+    speed_sub_ = node_->create_subscription<std_msgs::msg::Float64>(
+      "palletizer/speed", 10, [this](std_msgs::msg::Float64::ConstSharedPtr m) {
+        if (!std::isfinite(m->data) || m->data <= 0.0) {
+          RCLCPP_WARN(log_, "Ignoring speed %.3f (must be > 0)", m->data);
+          return;
+        }
+        const double s = limitSpeed(m->data);
+        if (speed_.exchange(s) != s) {
+          RCLCPP_INFO(log_, "Speed set to %.2fx (applies from the next move)", s);
+        }
+      });
     result_pub_ = node_->create_publisher<PlaceResult>("pallet/place_result", 10);
     hold_pub_ = node_->create_publisher<std_msgs::msg::Bool>(
       "conveyor/hold", rclcpp::QoS(1).reliable().transient_local());
@@ -68,7 +85,8 @@ public:
   void run()
   {
     setHold(false);
-    RCLCPP_INFO(log_, "Waiting for targets on pallet/target");
+    RCLCPP_INFO(log_, "Waiting for targets on pallet/target (speed %.2fx, max %.2fx)",
+      speed_.load(), max_speed_);
 
     while (rclcpp::ok()) {
       PalletTarget t;
@@ -184,6 +202,7 @@ private:
     if (!planned) {
       return fail(std::string("planning failed: ") + what);
     }
+    applySpeed(plan.trajectory_);
     if (!static_cast<bool>(arm_->execute(plan))) {
       return fail(std::string("execution failed: ") + what);
     }
@@ -200,10 +219,34 @@ private:
       return fail(std::string("cartesian path infeasible: ") + what +
                " (" + std::to_string(static_cast<int>(frac * 100)) + "%)");
     }
+    applySpeed(traj);
     if (!static_cast<bool>(arm_->execute(traj))) {
       return fail(std::string("execution failed: ") + what);
     }
     return true;
+  }
+
+  // Keep the multiplier inside [0.05, max_speed].
+  double limitSpeed(double s) const {return std::max(0.05, std::min(s, max_speed_));}
+
+  // Same path, speed_ times faster (or slower): compress the timestamps and scale
+  // velocities and accelerations to match.
+  void applySpeed(moveit_msgs::msg::RobotTrajectory & traj) const
+  {
+    const double k = speed_.load();   // read once so one trajectory never mixes two values
+    if (k == 1.0) {
+      return;
+    }
+    for (auto & pt : traj.joint_trajectory.points) {
+      const double t = rclcpp::Duration(pt.time_from_start).seconds();
+      pt.time_from_start = rclcpp::Duration::from_seconds(t / k);
+      for (auto & v : pt.velocities) {
+        v *= k;
+      }
+      for (auto & a : pt.accelerations) {
+        a *= k * k;
+      }
+    }
   }
 
   bool fail(const std::string & why)
@@ -269,7 +312,8 @@ private:
 
   std::string group_, ee_link_;
   std::vector<std::string> touch_links_;
-  double tool_length_, grasp_clearance_, approach_;
+  double tool_length_, grasp_clearance_, approach_, max_speed_;
+  std::atomic<double> speed_{1.0};   // written by the topic callback, read by the motion thread
   Quaternion grasp_q_;
 
   std::mutex mtx_;
@@ -277,6 +321,7 @@ private:
   std::string busy_id_, done_id_, last_error_;
 
   rclcpp::Subscription<PalletTarget>::SharedPtr target_sub_;
+  rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr speed_sub_;
   rclcpp::Publisher<PlaceResult>::SharedPtr result_pub_;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr hold_pub_;
 };

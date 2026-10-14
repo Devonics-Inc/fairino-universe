@@ -33,6 +33,8 @@ def generate_launch_description():
         conveyor_node('box_spawner'),
         conveyor_node('box_advancer'),
         conveyor_node('conveyor_manager'),
+        conveyor_node('scene_gateway'),
+        
         # The sensor loads the robot model, so it needs the URDF and SRDF.
         conveyor_node('proximity_sensor', [
             moveit_config.robot_description,

@@ -34,10 +34,9 @@ namespace conveyor_sim
 
 
 // this node is responsible for the following 
-// - publish box targets (box_id, box_target)
-// - determine whether to send a spwan request or not 
-// - hold infomration regarding the total number of spawned boxes and removed
-// -
+// how many boxes do we have right now - by storing the state of the boxes ?
+// should we spawn more boxes by sending request to other nodes?
+// is there any box arrived at pick up point / what is the id of this box ? 
 class ConveyorManager : public rclcpp::Node
 {
 public:
@@ -45,28 +44,32 @@ public:
   : Node("conveyor_manager"), p_(declareConveyorParams(*this))
   {
     // capture the max number of boxes on belt during simulation 
-    maxBoxesOnBelt_ = declare_parameter<int64_t>("num_boxes", 3);
-    num_boxes_ = declare_parameter<int64_t>("num_boxes", 3);   // boxes kept on the belt
+    maxBoxesOnBelt_ = declare_parameter<int64_t>("num_boxes", 3);   // boxes kept on the belt
 
     // capture the total number of boxes on the pallet
     totalPalletBoxes_ = declare_parameter<int64_t>("max_boxes", 50); 
-    max_boxes_ = declare_parameter<int64_t>("max_boxes", 50);  // total boxes for the run
     const double rate = declare_parameter<double>("manager_rate", 10.0);
 
+    // Validate geometry :=> 
     // make sure that the max boxes on belts are geometrically feasible 
+    // for example you might choose a belt of 1 meter and a box of 0.5 meter, 
+    //then you can only have 2 boxes on the belt at any time
     validateNumberOfBoxes();
 
 
     // create a publisher for the box targets {box_id_   box_target_x}
+    // the targets is usually consumed by the adavncer 
     boxTargets_Pub = create_publisher<BoxTargetArray>("conveyor/box_targets", latchedQos());
     
-    // the targets is usually consumed by the adavncer 
+
 
 
     // if there is any object at the pick up this publisher inform the robot with the coordinates
     // and whether there is box or not 
     isBoxAtPickUp_pub_ = create_publisher<std_msgs::msg::Bool>("conveyor/box_present", 10);
     // id of the box at the pickup 
+
+    // conveyor_manager -P-> any_node /box_at_pick (id)
     at_pick_pub_ = create_publisher<std_msgs::msg::String>("conveyor/box_at_pick", 10);
 
     // subscriber to the state of the box 
@@ -80,24 +83,26 @@ public:
 
     spawn_client_ = create_client<Trigger>("conveyor/spawn_box");
 
+    // conveyor_manager -P-> pallet_planner (box at pick up x,y,z)
     pick_pose_pub_ = create_publisher<geometry_msgs::msg::PoseStamped>("conveyor/box_pick_pose", 10);
 
     publishTargets();  // start from an empty belt
     timer_ = rclcpp::create_timer(
-      this, get_clock(), rclcpp::Duration::from_seconds(1.0 / 30), [this]() {tick();});
+      this, get_clock(), rclcpp::Duration::from_seconds(1.0 / rate), [this]() {tick();});
   }
 
 private:
 
   void tick()
   {
+    // try to spawn a box and spawn it and update the targets topic
     trySpawnNextBox();
     publishStatus();
   }
 
   void validateNumberOfBoxes()
   {
-    if (num_boxes_ < 1 || static_cast<std::size_t>(num_boxes_) > p_.numSlots()) {
+    if (maxBoxesOnBelt_ < 1 || static_cast<std::size_t>(maxBoxesOnBelt_) > p_.numSlots()) {
       throw std::invalid_argument(
               "num_boxes must be between 1 and " + std::to_string(p_.numSlots()) +
               " (the number of slots that fit between start_x and pick_x)");
@@ -110,12 +115,12 @@ private:
   // within the current belt configuration 
   bool isMaxCapacityReached()
   {
-    return static_cast<int64_t>(queue_.size()) >= num_boxes_ ;
+    return static_cast<int64_t>(queue_.size()) >= maxBoxesOnBelt_ ;
   }
 
   bool spawnedAllBoxes()
   {
-    return spawned_ >= max_boxes_;
+    return spawned_ >= totalPalletBoxes_;
   }
 
   bool isSpawnServiceNotReady()
@@ -267,11 +272,9 @@ private:
   }
   
   ConveyorParams p_;
-  int64_t num_boxes_;
-  int64_t max_boxes_;
-
-  int64_t maxBoxesOnBelt_ ;
+  int64_t maxBoxesOnBelt_;
   int64_t totalPalletBoxes_;
+
   std::deque<std::string> queue_;                       // lead box first
 
   // unordered map that connect between id and position

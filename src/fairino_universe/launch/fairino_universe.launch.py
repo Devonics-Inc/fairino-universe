@@ -1,4 +1,5 @@
 """
+What this file do
 Fairino robotic arm bring-up launch file.
 
 Parses launch arguments and starts:
@@ -10,6 +11,31 @@ Parses launch arguments and starts:
 
 Digital-twin mode: run with hardware:=true and moveit:=true to mirror a
 physical Fairino arm in RViz/Gazebo while driving it normally.
+"""
+
+
+"""
+How it do it ? 
+
+After I run `ros2 launch ...`, the ROS 2 launch system loads the launch file and looks for 
+
+the function that generates the launch plan, `generate_launch_description()`. 
+
+This function returns a `LaunchDescription` object containing different launch actions 
+
+that define how the system should be initialized.
+
+One of these actions is `DeclareLaunchArgument`, which, when executed by the launch system,
+
+declares an argument and establishes its default/YAML configuration value in the `LaunchContext`, 
+
+Once the context contains the required configuration values, they can be retrieved when needed by 
+
+creating a `LaunchConfiguration` substitution object and evaluating it using `perform(context)`. 
+
+This resolves the substitution against the context and returns the corresponding value,
+
+which can then be used by other launch actions to configure or execute operations.
 """
 
 import os
@@ -27,6 +53,11 @@ from fr_universe_launch_actions import *
 from utils_helpers import _truthy,_flatten,_load_config_file
 
 
+"""
+launch system creates and manages LaunchContext object and it uses the launchActions 
+to generate this LaunchContext
+
+"""
 def launch_setup(context, *args, **kwargs):
 
 
@@ -34,7 +65,7 @@ def launch_setup(context, *args, **kwargs):
     cfg = resolve_config(context)
 
     # configure and build a custom interface supporting the correct ip address 
-    build_configured_interface(cfg.robot_ip_address)
+    build_configured_interface(cfg.robot_ip_address,cfg.rebuild_plugin_enabled)
 
 
     actions = append_log_actions(cfg)
@@ -60,6 +91,7 @@ def launch_setup(context, *args, **kwargs):
 
     world_sdf_path = append_gazebo_actions(cfg,remaining_actions)
     append_moveit_actions(cfg, actions, world_sdf_path)
+    append_visualization_actions(cfg,actions)
 
 
 
@@ -74,27 +106,27 @@ def launch_setup(context, *args, **kwargs):
 
 
 
-
-
+# descripe work for launch system to do
 def generate_launch_description():
-
     """
-    Entry point for the ros2 launch command -- the launch system looks up this
-    exact function name after importing the file.
+    This function is responsible for generating the startup plan, represented by a
+    LaunchDescription object.
 
-    Runs at parse time, before any launch argument has a value. Its job is to
-    supply the default parameter values, read from launch_params.yaml, and to declare each
-    argument name. Declaring a name is what later allows the LaunchService to
-    override that default with a CLI value. This function cannot see what the user typed.
+    The startup plan contains a sequence of launch actions that define how the
+    system should be initialized. These actions are constructed based on the
+    configuration provided by the YAML file.
 
-    Anything that needs a resolved argument value lives in launch_setup(),
-    reached via the OpaqueFunction below.
+    The function reads and parses the YAML configuration, then uses the extracted
+    values to construct the required launch action objects. It also declares launch
+    arguments, making configuration values available through the LaunchContext
+    during launch execution.
 
-    Returns a LaunchDescription -- an ordered list of actions handed to the
-    LaunchService, which visits each in turn.
+    Returns:
+        LaunchDescription: A description containing the initial launch actions,
+        including the declared launch arguments.
     """
-
-    # fetch yaml default values from launch_params.yaml as a flat dictionary 
+    
+    # fetch yaml default values from launch_params.yaml as a flat dictionary using YAML library
     yaml_launch_params = load_launch_params()   
 
     # store a string of the packages path combined | used later to set enviroment varaibles
@@ -103,25 +135,11 @@ def generate_launch_description():
 
 
 
-    # Build one DeclareLaunchArgument action per configurable option.
-    # Nothing is resolved here -- these are inert objects. Later, when the
-    # LaunchService visits each one, it writes that name into the context,
-    # using the CLI value if the user passed one and yaml_launch_params default otherwise.
+    # turn each YAML parameter to a LAUNCH Actions 
+    # It tells the launch system that robot_ip is an argument users can configure when launching the file. 
     declared_arguments = declare_launch_arguments(yaml_launch_params)
 
 
-    '''
-
-        A ``LaunchDescription`` is essentially a collection of launch actions,
-    which may include:
-
-        ├── Launch arguments
-        ├── Environment variables
-        ├── Nodes
-        ├── Included launch files
-        └── Other actions
-
-    '''
 
     return LaunchDescription(
         [

@@ -14,7 +14,7 @@
     }
 
     .page {
-      max-width: 720px;
+      max-width: 1320px;
       margin: 0 auto;
       padding: 48px 24px 64px;
     }
@@ -32,21 +32,55 @@
 
     .viz-window {
       position: relative;
-      width: 640px;
+      width: 100%;
       height: 400px;
-      max-width: 100%;
       border: 1px solid #ddd;
       border-radius: 8px;
       overflow: hidden;
       background: #fff;
     }
 
-    #viz {
+    .viz {
       display: block;
       width: 100%;
       height: 100%;
       border: 0;
     }
+
+    .views {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+
+    .views > section { min-width: 0; }   /* lets the iframes shrink with their column */
+
+    @media (max-width: 900px) {
+      .views { grid-template-columns: 1fr; }   /* stack on narrow screens */
+    }
+
+    .view-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+
+    .view-head h2 {
+      font-size: 16px;
+      font-weight: 600;
+      margin: 0;
+    }
+
+    .badge {
+      font-size: 12px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      border: 1px solid #ccc;
+      color: #666;
+    }
+    .badge.sim  { border-color: #3b6fd4; color: #3b6fd4; }
+    .badge.live { border-color: #2e9d52; color: #2e9d52; }
 
     .loading {
       position: absolute;
@@ -159,13 +193,13 @@
       margin: 8px 0 0;
     }
 
-    .colors {
+    .colors, .speed {
       margin-top: 14px;
       border-top: 1px solid #eee;
       padding-top: 12px;
     }
 
-    .colors h3 {
+    .colors h3, .speed h3 {
       font-size: 14px;
       font-weight: 600;
       margin: 0 0 8px;
@@ -200,6 +234,29 @@
       height: 28px;
       padding: 2px;
       cursor: pointer;
+    }
+
+    .speed-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .speed-row input[type="range"] {
+      flex: 1;
+      min-width: 160px;
+      padding: 0;
+      border: 0;
+      accent-color: #1a1a1a;
+    }
+
+    .speed-row output {
+      width: 48px;
+      text-align: right;
+      font-size: 14px;
+      font-variant-numeric: tabular-nums;
+      color: #444;
     }
 
     details {
@@ -271,21 +328,39 @@
     <h1>Palletizing Visualizer</h1>
     <p class="subtitle">Live 3D view of the palletizing cell — arm pose, gripper state, and current stack layout.</p>
 
-    <div class="viz-window">
-      <div class="loading" id="loading">
-        <div class="spinner"></div>
-        <span>Connecting to robot…</span>
-      </div>
+    <div class="views">
+      <section aria-label="Simulation view">
+        <div class="view-head">
+          <h2>Simulation</h2>
+          <span class="badge sim">SIM</span>
+        </div>
+        <div class="viz-window">
+          <div class="loading">
+            <div class="spinner"></div>
+            <span>Connecting to simulation…</span>
+          </div>
+          <iframe class="viz" data-view="sim" title="Simulation 3D view"
+                  allow="fullscreen; cross-origin-isolated"></iframe>
+        </div>
+      </section>
 
-      <iframe
-        id="viz"
-        title="Robot 3D view"
-        src="http://localhost:8081/?ds=foxglove-websocket&amp;ds.url=ws://localhost:8765"
-        allow="fullscreen; cross-origin-isolated"
-      ></iframe>
+      <section aria-label="Current status view">
+        <div class="view-head">
+          <h2>Current status</h2>
+          <span class="badge live">LIVE</span>
+        </div>
+        <div class="viz-window">
+          <div class="loading">
+            <div class="spinner"></div>
+            <span>Connecting to robot…</span>
+          </div>
+          <iframe class="viz" data-view="live" title="Live robot 3D view"
+                  allow="fullscreen; cross-origin-isolated"></iframe>
+        </div>
+      </section>
     </div>
 
-    <!-- Command menu: talks to ROS directly through rosbridge, independent of the iframe -->
+    <!-- Command menu: talks to ROS directly through rosbridge, independent of the iframes -->
     <section class="controls" aria-label="Robot commands">
       <div class="controls-head">
         <h2>Commands</h2>
@@ -301,6 +376,19 @@
         <button class="stop" data-cmd="stop" disabled>Stop</button>
       </div>
       <p class="hint">Software stop only. Use the robot's hardware E-stop in an emergency.</p>
+
+      <div class="speed">
+        <h3>Arm speed</h3>
+        <div class="speed-row">
+          <input type="range" id="speed" min="0.1" max="10" step="0.1" value="1" aria-label="Arm speed multiplier" disabled />
+          <output id="speed-value" for="speed">1.0x</output>
+          <button data-speed="0.5" disabled>0.5x</button>
+          <button data-speed="1" disabled>1x</button>
+          <button data-speed="2" disabled>2x</button>
+          <button data-speed="5" disabled>5x</button>
+        </div>
+        <p class="hint">Applies from the arm's next move. The node caps the value at its max_speed parameter.</p>
+      </div>
 
       <div class="colors">
         <h3>Colors</h3>
@@ -353,16 +441,38 @@
   </div>
 
   <script>
-    // ---------- iframe loading overlay ----------
-    const frame = document.getElementById('viz');
-    const loading = document.getElementById('loading');
-    frame.addEventListener('load', () => loading.classList.add('hidden'));
+    // ---------- 3D views: one Lichtblick server + one bridge per view ----------
+    const VIEWS = {
+      sim: {
+        lichtblick: 'http://localhost:8081',   // Lichtblick instance with the simulation preset
+        bridge:     'ws://localhost:8765',     // foxglove_bridge on the simulation graph
+      },
+      live: {
+        lichtblick: 'http://localhost:8082',   // Lichtblick instance with the status preset
+        bridge:     'ws://localhost:8766',     // foxglove_bridge on the real robot graph
+      },
+    };
+
+    document.querySelectorAll('iframe[data-view]').forEach(frame => {
+      const cfg = VIEWS[frame.dataset.view];
+      const loading = frame.parentElement.querySelector('.loading');
+      frame.addEventListener('load', () => loading.classList.add('hidden'));  // attach before src
+
+      const url = new URL(cfg.lichtblick);
+      url.searchParams.set('ds', 'foxglove-websocket');
+      url.searchParams.set('ds.url', cfg.bridge);
+      frame.src = url.toString();
+    });
 
     // ---------- config: edit these to match your nodes ----------
     const ROSBRIDGE_URL = 'ws://localhost:9090';
     const COMMAND_TOPIC = '/palletizer/command';
     const COMMAND_TYPE  = 'std_msgs/msg/String';
-    const PALLETIZER_NODE = '/palletizer';   // node that owns box_color / pallet_color
+    const PALLETIZER_NODE = '/palletizer';           // node that owns pallet_color
+    const BOX_COLOR_TOPIC = '/conveyor/box_color';   // box_spawner listens here (latched)
+    const BOX_COLOR_TYPE  = 'std_msgs/msg/ColorRGBA';
+    const SPEED_TOPIC = '/palletizer/speed';         // palletizer_node listens here
+    const SPEED_TYPE  = 'std_msgs/msg/Float64';      // 1.0 = normal, 3.0 = 3x faster
 
     const PRESETS = {
       box_color:    ['#c8894a', '#e0c28f', '#3b6fd4', '#2e9d52', '#c9412e'],
@@ -373,7 +483,7 @@
     const statusEl = document.getElementById('status');
     const statusText = document.getElementById('status-text');
     const logEl = document.getElementById('log');
-    const actionButtons = document.querySelectorAll('button[data-cmd], #c-send, #apply-colors');
+    const actionButtons = document.querySelectorAll('button[data-cmd], button[data-speed], #speed, #c-send, #apply-colors');
     const pendingCalls = new Map();   // call id -> callback
 
     let ws = null;
@@ -398,6 +508,9 @@
       ws.onopen = () => {
         advertised = new Map();   // rosbridge forgets advertisements on reconnect
         retryDelay = 1000;
+        // advertise now so the publisher is matched before the first speed change
+        ws.send(JSON.stringify({ op: 'advertise', topic: SPEED_TOPIC, type: SPEED_TYPE }));
+        advertised.set(SPEED_TOPIC, SPEED_TYPE);
         setStatus(true, 'Connected');
       };
 
@@ -422,13 +535,14 @@
       ws.onerror = () => ws.close();
     }
 
-    function publish(topic, type, msg) {
+    function publish(topic, type, msg, latch = false) {
       if (!ws || ws.readyState !== WebSocket.OPEN) {
         log('Not connected to rosbridge.', true);
         return;
       }
       if (advertised.get(topic) !== type) {
-        ws.send(JSON.stringify({ op: 'advertise', topic, type }));
+        // latch -> transient_local, required to reach a latched subscriber
+        ws.send(JSON.stringify({ op: 'advertise', topic, type, latch }));
         advertised.set(topic, type);
       }
       ws.send(JSON.stringify({ op: 'publish', topic, msg }));
@@ -457,6 +571,28 @@
         return;
       }
       publish(topic, type, msg);
+    });
+
+    // ---------- arm speed ----------
+    const speedInput = document.getElementById('speed');
+    const speedValue = document.getElementById('speed-value');
+
+    function showSpeed(v) {
+      speedValue.textContent = `${Number(v).toFixed(1)}x`;
+    }
+
+    function sendSpeed(v) {
+      const speed = Number(v);
+      speedInput.value = speed;
+      showSpeed(speed);
+      publish(SPEED_TOPIC, SPEED_TYPE, { data: speed });
+      if (ws && ws.readyState === WebSocket.OPEN) log(`Arm speed ${speed.toFixed(1)}x sent to ${SPEED_TOPIC}`);
+    }
+
+    speedInput.addEventListener('input', () => showSpeed(speedInput.value));    // while dragging
+    speedInput.addEventListener('change', () => sendSpeed(speedInput.value));   // on release
+    document.querySelectorAll('button[data-speed]').forEach(btn => {
+      btn.addEventListener('click', () => sendSpeed(btn.dataset.speed));
     });
 
     // ---------- service calls ----------
@@ -498,16 +634,27 @@
       return m ? '#' + m.slice(0, 3).map(n => (+n).toString(16).padStart(2, '0')).join('') : rgb;
     }
 
+    // '#c8894a' -> { r: 0.78, g: 0.54, b: 0.29, a: 1 }  (std_msgs/ColorRGBA uses 0..1)
+    function hexToRgba(hex) {
+      const n = parseInt(hex.slice(1), 16);
+      return { r: ((n >> 16) & 255) / 255, g: ((n >> 8) & 255) / 255, b: (n & 255) / 255, a: 1.0 };
+    }
+
     document.getElementById('apply-colors').addEventListener('click', () => {
+      // boxes: straight to box_spawner as a latched ColorRGBA
+      const boxHex = document.querySelector('.color-row[data-param="box_color"] input[type="color"]').value;
+      publish(BOX_COLOR_TOPIC, BOX_COLOR_TYPE, hexToRgba(boxHex), true);
+
+      // pallet: still a parameter on the palletizer node
       // rcl_interfaces/msg/ParameterType: 4 = STRING
-      const parameters = [...document.querySelectorAll('.color-row')].map(row => ({
+      const parameters = [...document.querySelectorAll('.color-row:not([data-param="box_color"])')].map(row => ({
         name: row.dataset.param,
         value: { type: 4, string_value: row.querySelector('input[type="color"]').value },
       }));
 
       callService(`${PALLETIZER_NODE}/set_parameters`, { parameters }, (res) => {
         if (res.result === false) {
-          log(`Could not reach ${PALLETIZER_NODE}/set_parameters. Is the node running?`, true);
+          log(`Box color sent. Pallet color failed: could not reach ${PALLETIZER_NODE}/set_parameters.`, true);
           return;
         }
         const failed = (res.values?.results || []).filter(r => !r.successful);
