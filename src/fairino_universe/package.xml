@@ -35,6 +35,12 @@
   <depend>tf2_ros</depend>
   <depend>ros_gz</depend>
 
+
+  <depend>foxglove_bridge</depend>
+  <depend>controller_manager</depend>
+  <depend>joint_state_broadcaster</depend>
+  <depend>joint_trajectory_controller</depend>
+  
   <export>
     <build_type>ament_cmake</build_type>
   </export>

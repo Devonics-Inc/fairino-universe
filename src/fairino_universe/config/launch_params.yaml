@@ -1,8 +1,8 @@
 robot:
   robot_model: fairino5
   # the robot is agnostic regarding the robot that is online 
-  robot_hardware_connected: "false"
-  robot_ip_address: "192.168.58.25"
+  robot_hardware_connected: "true"
+  robot_ip_address: "192.168.58.2"
   rebuild_plugin : "false"
 
 
