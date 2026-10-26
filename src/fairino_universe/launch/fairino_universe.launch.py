@@ -6,7 +6,6 @@ Parses launch arguments and starts:
   - robot_state_publisher (from an xacro-generated URDF)
   - ros2_control controller_manager + spawners (arm, mount rail, gripper)
   - MoveIt 2 move_group + RViz (optional, --moveit:=true)
-
   - Ignition Gazebo (optional, --gazebo:=true)
 
 Digital-twin mode: run with hardware:=true and moveit:=true to mirror a
@@ -17,13 +16,13 @@ physical Fairino arm in RViz/Gazebo while driving it normally.
 """
 How it do it ? 
 
-After I run `ros2 launch ...`, the ROS 2 launch system loads the launch file and looks for 
+After I run `ros2 launch ...`, the ROS 2 launch system loads the launch file as import and looks for `generate_launch_description` 
 
-the function that generates the launch plan, `generate_launch_description()`. 
-
-This function returns a `LaunchDescription` object containing different launch actions 
+`generate_launch_description()`.  returns a `LaunchDescription` object containing different launch actions 
 
 that define how the system should be initialized.
+
+
 
 One of these actions is `DeclareLaunchArgument`, which, when executed by the launch system,
 
@@ -108,6 +107,7 @@ def launch_setup(context, *args, **kwargs):
 
 # descripe work for launch system to do
 def generate_launch_description():
+    
     """
     This function is responsible for generating the startup plan, represented by a
     LaunchDescription object.
@@ -129,22 +129,24 @@ def generate_launch_description():
     # fetch yaml default values from launch_params.yaml as a flat dictionary using YAML library
     yaml_launch_params = load_launch_params()   
 
+    
+    # turn each YAML parameter to a LAUNCH Actions 
+    declared_arguments = declare_launch_arguments(yaml_launch_params)
+
+    
+
     # store a string of the packages path combined | used later to set enviroment varaibles
     # before launching gazebo, as gazebo couldn't automatically resolve package::// in xacro 
     pakcages_path = build_resource_path(["fairino_description", "rail_description", "gripper_descriptions"])
 
 
 
-    # turn each YAML parameter to a LAUNCH Actions 
-    # It tells the launch system that robot_ip is an argument users can configure when launching the file. 
-    declared_arguments = declare_launch_arguments(yaml_launch_params)
 
 
 
     return LaunchDescription(
         [
-            # Gazebo is not a ROS program and can't resolve package:// on its
-            # own -- it needs the description packages' share dirs on its
+            # Gazebo is not a ROS program and can't resolve package:// on its own it needs the description packages' share dirs on its
             # search path. Set first, so every process spawned below inherits it.
             SetEnvironmentVariable(name="IGN_GAZEBO_RESOURCE_PATH", value=pakcages_path),
 
